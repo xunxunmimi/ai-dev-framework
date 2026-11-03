@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "screens"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "enum": [
+        "1.0",
+        "2.0"
+      ]
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sliceId",
+          "screenId",
+          "sourceRef",
+          "targetRef",
+          "states"
+        ],
+        "properties": {
+          "sliceId": {
+            "type": "string"
+          },
+          "screenId": {
+            "type": "string"
+          },
+          "sourceRef": {
+            "type": "string"
+          },
+          "targetRef": {
+            "type": "string"
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "status",
+                "sourceEvidence",
+                "targetEvidence",
+                "interactionEvidence"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "verified",
+                    "blocked",
+                    "not_applicable"
+                  ]
+                },
+                "sourceEvidence": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "path",
+                          "sha256",
+                          "binding",
+                          "side",
+                          "mediaType",
+                          "capturedAt",
+                          "artifactSha256",
+                          "device",
+                          "stateId",
+                          "captureCommand",
+                          "origin"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "targetEvidence": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "path",
+                          "sha256",
+                          "binding",
+                          "side",
+                          "mediaType",
+                          "capturedAt",
+                          "artifactSha256",
+                          "device",
+                          "stateId",
+                          "captureCommand",
+                          "origin"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "interactionEvidence": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "path",
+                          "sha256",
+                          "binding",
+                          "side",
+                          "mediaType",
+                          "capturedAt",
+                          "artifactSha256",
+                          "device",
+                          "stateId",
+                          "captureCommand",
+                          "origin"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "notes": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "binding": {
+      "type": "object"
+    },
+    "coverageSha256": {
+      "type": "string"
+    },
+    "review": {
+      "type": "object"
+    }
+  }
+}

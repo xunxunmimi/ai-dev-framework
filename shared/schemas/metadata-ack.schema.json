@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "ai-frameworks:managed-metadata-ack",
+  "type": "object",
+  "required": [
+    "taskId",
+    "path",
+    "oldSha256",
+    "newSha256",
+    "reason",
+    "at",
+    "confirmedBy",
+    "authorizationSource"
+  ],
+  "properties": {
+    "taskId": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "oldSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "newSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confirmedBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorizationSource": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,598 @@
+{
+  "schemaVersion": "1.0",
+  "sourceMachine": "CCMac",
+  "sourceDirectoryLabel": "AI开发框架_2.6.1",
+  "sourceVersion": "2.6.1",
+  "sourceRuntimeSha256": "963036fa40c14c863aeae48617ff16766d09b4ce55671dde5a734c5ade606e89",
+  "importStatus": "verified-existing-baseline",
+  "releaseApproval": false,
+  "boniumac265Compared": false,
+  "scope": "Allowlisted framework source, docs, eval definitions and synthetic fixtures only",
+  "documentationNormalization": {
+    "replacement": "machine-specific home -> ${HOME}",
+    "files": [
+      "docs/2.6.1-任务元数据与外部只读.md",
+      "docs/AI-Dev-Kit使用方法.md",
+      "docs/Vibe-Playbook-v2使用方法.md",
+      "docs/微信小程序Skill使用方法.md",
+      "docs/迁移框架与AI-Dev-Kit结合使用方法.md",
+      "docs/迁移框架使用方法.md"
+    ]
+  },
+  "excluded": [
+    "credentials",
+    "user configuration",
+    "business projects",
+    "task state",
+    "sessions",
+    "caches",
+    "release archives",
+    "local authorization record"
+  ],
+  "originalFiles": {
+    "README.md": {
+      "sha256": "c0e84026c32158d0d5bc7f5e10f89845449cb9ceb47d9f9ca00aa168fb2b3213",
+      "mode": "0o644"
+    },
+    "VERSION": {
+      "sha256": "a3fbebb0fe4c012038eceff3148b1602c7da8942fcfe1d563c1de6d377558ae5",
+      "mode": "0o644"
+    },
+    "capabilities/swiftui-visual-design-review/SKILL.md": {
+      "sha256": "6f72e5cb3ea5d8467f8ce56c46163fdc78a03026c8fd0b8dc4b038035ee501ad",
+      "mode": "0o644"
+    },
+    "capabilities/swiftui-visual-design-review/agents/openai.yaml": {
+      "sha256": "9ebd848b1b2a9e519fa5eae642392a88ae2ac7901235b4bc6880dfdf82f17b81",
+      "mode": "0o644"
+    },
+    "capabilities/swiftui-visual-design-review/references/provenance.md": {
+      "sha256": "7dc32734417722cd9540acddf4be5df49725c9089826e903f2cbfce503adc513",
+      "mode": "0o644"
+    },
+    "capabilities/swiftui-visual-design-review/references/visual-review.md": {
+      "sha256": "f06bfb87f6b955e0ad472fad43be68f08464a34afcacc6d5563fc0fb528be0d2",
+      "mode": "0o644"
+    },
+    "docs/2.6.0-分级优化与回滚.md": {
+      "sha256": "946ffcbe5780bbbffd7b531b57929e6b840806a43467a2227990ba8b9de1453f",
+      "mode": "0o644"
+    },
+    "docs/2.6.1-任务元数据与外部只读.md": {
+      "sha256": "3d34ccf9b5bfe23a6d2e1b6a3af41400942e38b72b5984bc19acbcf631faf0a9",
+      "mode": "0o644"
+    },
+    "docs/AI-Dev-Kit使用方法.md": {
+      "sha256": "4e34554ea35ab236a33a45b20facf35703c2529cd283e88a7db67a5a8b330ddb",
+      "mode": "0o644"
+    },
+    "docs/README.md": {
+      "sha256": "1be865399fa491bcf0adf2b008a3e6d213870206bfd464a989ecf19ec5a8c52b",
+      "mode": "0o644"
+    },
+    "docs/Vibe-Playbook-v2使用方法.md": {
+      "sha256": "b1ac3c2d7daba46baf7b7b31cd6aea3ac7f24245a8e4e7636d39bb77f7a0e2b5",
+      "mode": "0o644"
+    },
+    "docs/三框架使用指南.md": {
+      "sha256": "ccc36cc44ab4ff680c845020f0c6e6b942dd05ba20e651d0b1ec044b3817f566",
+      "mode": "0o644"
+    },
+    "docs/微信小程序Skill使用方法.md": {
+      "sha256": "e5db907958c18260940e6851e044c67b0e127d0752183c4f2d1ddd6fc428b05b",
+      "mode": "0o644"
+    },
+    "docs/迁移框架与AI-Dev-Kit结合使用方法.md": {
+      "sha256": "c31883b6e3d3c879398ee147b0bb5bd6696c907962e36d9eb8af9c71aed7a479",
+      "mode": "0o644"
+    },
+    "docs/迁移框架使用方法.md": {
+      "sha256": "cdc3147d743ff63fd0ad75b8c82b0db6ae01545208b7edc56060c8f6b958e5e1",
+      "mode": "0o644"
+    },
+    "evals/README.md": {
+      "sha256": "806feb7a912d922808f6a2a405a4e0bc97fd5187d83e57720148087707ebec86",
+      "mode": "0o644"
+    },
+    "evals/cases/framework-routing.json": {
+      "sha256": "d23cf970497f4e2a31ae2359d1df73a4b4031557aa7ba46b7e398a8e7e89b01b",
+      "mode": "0o644"
+    },
+    "evals/cases/policy-routing.json": {
+      "sha256": "f229a3db6b3cf5b3e237f54fad516dc03ef78c02bee07cd4dfb04efaf42c3aad",
+      "mode": "0o644"
+    },
+    "evals/cases/quick.json": {
+      "sha256": "f79c4d55075840b05fb20f8ba1239ea76dba487700f56a077e1a5656986c97ad",
+      "mode": "0o644"
+    },
+    "evals/cases/real.json": {
+      "sha256": "4cbb9271f67b87ad1d87e852f6e28e80947af7395451b15e160fde084238f47b",
+      "mode": "0o644"
+    },
+    "evals/config.json": {
+      "sha256": "0f0c33fca10e5506c3591194d915fce8217c0c08ef51d8724fff1f480285395c",
+      "mode": "0o644"
+    },
+    "evals/fixtures/harmony/build-profile.json5": {
+      "sha256": "c94d85c196425460d0edb6600e3a933c8dbf8f4c934a64ed1eebb3563bfb58d1",
+      "mode": "0o644"
+    },
+    "evals/fixtures/harmony/entry/src/main/ets/features/SettingsPage.ets": {
+      "sha256": "eb665e3c9cfae9dc19efeb707e61966db12e4d5b883fe30497ad15a6917d3e9d",
+      "mode": "0o644"
+    },
+    "evals/fixtures/harmony/entry/src/main/ets/pages/Index.ets": {
+      "sha256": "1c500030278cb896b69f3d0b058e1acca5271d6a5881c05796bc7f74ee72f463",
+      "mode": "0o644"
+    },
+    "evals/fixtures/harmony/entry/src/main/module.json5": {
+      "sha256": "2ef3333efca67fca6455e4bdd13b9c10f93f2e1b37884ecf99e027f484554b7e",
+      "mode": "0o644"
+    },
+    "evals/fixtures/harmony/oh-package.json5": {
+      "sha256": "8e3f3fe22837fee4524704ca0e78d06d0561e7338dcea0a92e5d8ba2ab97787b",
+      "mode": "0o644"
+    },
+    "evals/fixtures/ios/App.xcodeproj/project.pbxproj": {
+      "sha256": "0ebdd4b2f10a5dcc4d8ff646a31b0e3b51ab3eb412db84df6fd2c124cc3b70e8",
+      "mode": "0o644"
+    },
+    "evals/fixtures/ios/Sources/ProfileViewController.swift": {
+      "sha256": "b7af1e7961cf14a22b8efed2623cbf2cf9b7ce3ad4c97ae038608480dce82700",
+      "mode": "0o644"
+    },
+    "evals/fixtures/ios/Sources/SettingsStore.swift": {
+      "sha256": "4e02b41517b93e28936ea8279af8ed356fa0627c54b9b5f1cf0cd47cf9315408",
+      "mode": "0o644"
+    },
+    "evals/fixtures/ios/Sources/SubscriptionService.swift": {
+      "sha256": "f20251747a4c949fd1ee550dd7e43e6e6098e577cf999abee59b657146121aa2",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/harmony-target/build-profile.json5": {
+      "sha256": "c94d85c196425460d0edb6600e3a933c8dbf8f4c934a64ed1eebb3563bfb58d1",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/harmony-target/entry/src/main/ets/pages/Index.ets": {
+      "sha256": "55a1d43e36a284f5c9020195932312ed70e999a766783c745430461460dc67d6",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/harmony-target/entry/src/main/module.json5": {
+      "sha256": "2ef3333efca67fca6455e4bdd13b9c10f93f2e1b37884ecf99e027f484554b7e",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/harmony-target/oh-package.json5": {
+      "sha256": "62797204d3a926ae88ec6b2810d5afda726f0049c3160bb2edae0d6703a2c4eb",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/ios-source/AppDelegate.swift": {
+      "sha256": "079aee17de88d4f44af1cacdbfb1024cbf1a59cdcb21d12674e41ed3d27c0f6b",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/ios-source/FormatFactory.xcodeproj/project.pbxproj": {
+      "sha256": "21a4347158130c25389fb04bd7f28b8ac8f1d3e496384426d6a12e9fa695a88a",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/ios-source/HomeViewController.swift": {
+      "sha256": "435f5476cd16f5d9b38ef7d262cdd9a53b952cf23c54b3c9b731c9a0ace4f16d",
+      "mode": "0o644"
+    },
+    "evals/fixtures/migration/ios-source/SettingsViewController.swift": {
+      "sha256": "86e94034b871cdd3ffb2ab7910b3bbf0b03f6486af4675af67685845bb547a12",
+      "mode": "0o644"
+    },
+    "evals/schemas/agent-result.schema.json": {
+      "sha256": "195fa1f75fe59ab7b8cebc1473e297583bded4edef4312d18c09652cd5ad566d",
+      "mode": "0o644"
+    },
+    "evals/schemas/case.schema.json": {
+      "sha256": "43204b549953cf34186f2e315acb2d21dc83d71fad05b2f28179037599ba2550",
+      "mode": "0o644"
+    },
+    "evals/schemas/quality-rubric.schema.json": {
+      "sha256": "30d04cf9faed7e54080489f0a8a209c2c9d2e4d73cfdee420fc8c644b395812e",
+      "mode": "0o644"
+    },
+    "evals/scripts/binding_benchmark.py": {
+      "sha256": "d286fe730575bca62c04f15bb33f7707b83bfcdd61e6106e02feba8e455e7c3a",
+      "mode": "0o644"
+    },
+    "evals/scripts/compare_results.py": {
+      "sha256": "8beaeafadbb2b08aa1827baf111de309768cf801b2a5c5038df04fcca5b253bf",
+      "mode": "0o755"
+    },
+    "evals/scripts/eval_common.py": {
+      "sha256": "23c784b46509b6352a2b2588672d03d20edf05cc1efe781dd0814658b4de7ac6",
+      "mode": "0o755"
+    },
+    "evals/scripts/judge_quality.py": {
+      "sha256": "977fc296646224dc0940eefd07f1c896d685b00fe5b62cc37e9b2acb593f8e33",
+      "mode": "0o755"
+    },
+    "evals/scripts/policy_benchmark.py": {
+      "sha256": "073684d5a625df4f7d26004de3af627dbc80471ea2914df9937774d4abb7f001",
+      "mode": "0o644"
+    },
+    "evals/scripts/routing_self_test.py": {
+      "sha256": "87bfb943b257fc124c3fe51fd75d41890968d88503e975ebefdd3d21f6bd54fb",
+      "mode": "0o755"
+    },
+    "evals/scripts/run_eval.py": {
+      "sha256": "64cd3be6d7dac7a92a57b8600c559fe6579028e3fdad44be5f4c7806139516aa",
+      "mode": "0o755"
+    },
+    "evals/scripts/safety_regression.py": {
+      "sha256": "acfac31531fc456cd158a9caa2e9eccd966d0338905e7d039a92c229102d03f2",
+      "mode": "0o644"
+    },
+    "evals/scripts/self_test.py": {
+      "sha256": "b8d8e07a96e529e796f7099828db8c1bc1d5fed1ea1d8f4988b0e084c4738664",
+      "mode": "0o755"
+    },
+    "frameworks/harmonyos-daily-development-rules/README.md": {
+      "sha256": "6438f957e85b70186f1a5f3f86848e94f4f409b14a5a008f4bddbfe3455da1ec",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/SKILL.md": {
+      "sha256": "93f5732385c19f2e0b97ca95a43fd7693650e67f3a1cb7ccf692ee794c53322c",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/agents/openai.yaml": {
+      "sha256": "b54ffd447449b16f26a22d17b2bb262b4dafdd9fab747da9db47ece6a06afb9d",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/external-tools.lock.json": {
+      "sha256": "d1d92d343252d1b3369c65c31027c3d04c3e2209d21b3ca1fe243bce138431a8",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/references/code-quality-harmonyos.md": {
+      "sha256": "9d608b29439560fc80b6060c72959cff6bbbcce238fc54267a1389cd8b11728d",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/references/verification.md": {
+      "sha256": "a879926c63452b3762384d3ba5a385909ea8ce61f324c6c83a2b78741c271493",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/scripts/self_test.py": {
+      "sha256": "d94d03f7558ce67f19f9b72e5a5b8e5573c7e1d9ac954e3f8b2fbfd2d94a4054",
+      "mode": "0o755"
+    },
+    "frameworks/harmonyos-daily-development-rules/setup-project.sh": {
+      "sha256": "5537bc4ebd4dc842c85ea767a4564efc32c88ecf489481704f103126aa9ff3e0",
+      "mode": "0o755"
+    },
+    "frameworks/harmonyos-daily-development-rules/templates/PROJECT.md": {
+      "sha256": "c03e4c4293edb1664346949b71d98c81ccf3cd1bb5f8c1e75a4fafffbc2c27cc",
+      "mode": "0o644"
+    },
+    "frameworks/harmonyos-daily-development-rules/templates/WORKFLOW.md": {
+      "sha256": "a73089f7d5fe33fdf91ccbdc71682116d1327d7862f29fb1e5bc8e8c7121536b",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/README.md": {
+      "sha256": "faaadb592f4da48e984288fd3f1ee403022f7cb8acbcc272d9516d975332535c",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/SKILL.md": {
+      "sha256": "74ef688e7fdecf96dbb59d822d23e47b629dfd784f189916c17e14c1c2f3edfb",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/agents/openai.yaml": {
+      "sha256": "24bba7fbbd59c1c703714afd35e704c5f46e121c8e36ba68ebc2437e79396329",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/external-tools.lock.json": {
+      "sha256": "d1d92d343252d1b3369c65c31027c3d04c3e2209d21b3ca1fe243bce138431a8",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/references/code-quality-ios.md": {
+      "sha256": "11bbe8210f389fa779d921648b8a2467cf1d4e657c52d807f3b355c2d86755cb",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/references/verification.md": {
+      "sha256": "65b8e3e486914df341f9a8a76288cbc057dc8ed0f7aa27492a1531a4b5247483",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/scripts/self_test.py": {
+      "sha256": "09b8ce3b22e3f7d5db1e15b694ed179148de2db7fe83237413d88912bc742641",
+      "mode": "0o755"
+    },
+    "frameworks/ios-daily-development-rules/setup-project.sh": {
+      "sha256": "c69e9adb05f2f6c280853446d0630a7949aefc6f6ec0cbb348c5b3031795e585",
+      "mode": "0o755"
+    },
+    "frameworks/ios-daily-development-rules/templates/PROJECT.md": {
+      "sha256": "0e69ab65d2e081f827ca4424dab170e4febad92d4504de9c3baff993ba6d2290",
+      "mode": "0o644"
+    },
+    "frameworks/ios-daily-development-rules/templates/WORKFLOW.md": {
+      "sha256": "59a13b0f56a8ad33b8322d90c82002f2b2cdafc052f3e3d597dcbc766cec9f2f",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/SKILL.md": {
+      "sha256": "10094d1260d64d863f99910bb3dfa26a5f5228bb1440655de593906e5ac987d2",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/START_MIGRATION.md": {
+      "sha256": "6ebda24f3de4f8ef3c8dee621ed48922b3b6fc8eb408fd71ed0a8f81a564239f",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/agents/openai.yaml": {
+      "sha256": "b98ae656c57bdcc9b59ae9c2bc8acde6cebb16248b2fe1923960e7c24df73291",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/assets/current.md": {
+      "sha256": "bdb3272d98b707c1662711201b529af35683e255a1c1d1631d8c1ed1a963eff6",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/assets/gate-config.json": {
+      "sha256": "9bf09f35f64b269ba25752f07cae478cc24e8ef8bd4f9ae9d21327f7f1796426",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/assets/project-agents.md": {
+      "sha256": "e7be51482de67f6ad0a108d1d47be088397876b16b39da129ba47af080979574",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/assets/project.json": {
+      "sha256": "2253f95d25bd03e2ea3b7257c4c7c0b2b4ca4c8815fb27287fed47aad6a95913",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/arkts-implementation.md": {
+      "sha256": "c59bb9592844fd54201778d34302f8f07ba7c87dde87d22b09a6ab01c0c3bcee",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/code-quality-migration.md": {
+      "sha256": "0f2756e2b07825721c343e40dfcb7551ee4743897c680d34650efb7799e2e754",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/core-contract.md": {
+      "sha256": "5446e038dfb21df0582a80edbcd43d86e71eca514c718f0917966970e2a69d68",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/discovery-gate.md": {
+      "sha256": "fd98fa080b2f219f5b71e94922cd1047dd086ecf7e6f64b8a9eadde9f75f7112",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/gate-configuration.md": {
+      "sha256": "a3b7945b6e05cba96c561a09e3bc3877be97b05b1ec80def40c29dfe7b6fe3fd",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/high-risk-and-release.md": {
+      "sha256": "899cc8a4323c2fbb32a65de53c03722fe901bd8785d1a559d756d33414060aba",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/migration-workflow.md": {
+      "sha256": "5f0a05e0921c4dcca59f3e594f9091b701a45dd110427c5475750363fd1305bc",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/model-policy.md": {
+      "sha256": "d7b3d5075a292142ee0be30dc324f3d122882a19b03bcec558fd6c7fd873544a",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/parity-residuals.md": {
+      "sha256": "69fa3077841ee8361c2baba284d61d725a2617d0c704876bdaa6b5885afe52e8",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/skill-interop.md": {
+      "sha256": "8f53140ae013e43f2c51705ebe17696b7ce205feb6682ef25ccec3982f5cadf3",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/source-analysis.md": {
+      "sha256": "2974f834b65e66079cbd0c9dbcd4994025c91e5bf61faaa1377874190b3c5f3c",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/state-machine.md": {
+      "sha256": "a883ce687d759633443b6646c2349cbedcdf278a6e8f0f55a4a1bb8514d3a0f1",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/task-routing.md": {
+      "sha256": "95cd66be3f5fd6d32229fceaa9076a2f05484330e4286de12999187fc6bd613c",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/ui-quality.md": {
+      "sha256": "4d484fe1ddde8e384eadf6376ba5c5bdb372aa766b442f5ec12124948c6f7a4f",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/references/verification.md": {
+      "sha256": "c57097a7a5aed08e76e60520d9d251f5f466fa2fddeff6ee758233503f96f6e7",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/schemas/discovery-baseline.schema.json": {
+      "sha256": "f397064e822889e9990e0759e826b3fab30569f49a033a30e9fcf3ce3998fb09",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/schemas/migration-plan.schema.json": {
+      "sha256": "770f4bdfa463efdf0da37d25a286f0e02002a8c96152f77c2891b6082b48d0af",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/schemas/migration-state.schema.json": {
+      "sha256": "7f09eca1cbc7090d0a1961afb7b17d38e7cdb93eae5155ed2a785dcb572259aa",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/schemas/ui-state-manifest.schema.json": {
+      "sha256": "912a89a946d9de1801f5bff6c5e9237c5bceb4c8050eee7527f6eb0bc433705e",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/analyze_source.py": {
+      "sha256": "ceafb545713f1cc12a7fa95084f90797927c8a75411061e77f82ab1020f6edb9",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/check_discovery_gate.py": {
+      "sha256": "58a0421d47dd856ea513d49244f1c889d38f0cb65a1b8d6e4ed90cc8bb208a1a",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/classify_task.py": {
+      "sha256": "5af1f88d169f1f1c654e987177a96112b8c103a57eaf202bcfbbd149e6c14b3f",
+      "mode": "0o755"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/detect_gates.py": {
+      "sha256": "d14bd28eeddf576178f2289438284c53c009d4e933ef5daaa0d471d0d921dc09",
+      "mode": "0o755"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/migration_state.py": {
+      "sha256": "31b99a0e5829f621202ac246bbd401f85dbf9ee7191f22a8f3d7f70c9287923e",
+      "mode": "0o755"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/plan_approval.py": {
+      "sha256": "240c34205131e91048e52c563ae0f57e2644d33c7a630defcb1c1fa4577be8c7",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/release_evidence.py": {
+      "sha256": "dc32a207739bff6721894a30ca5c08362e24d538d0780cf11775b1a97784e1aa",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/run_gates.py": {
+      "sha256": "d86c7a013e5c84abeecb744084a5e9327c47b860c3dc109a34de623ad73b6f13",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/score_ui_quality.py": {
+      "sha256": "0da04b7337d0da43beb7fa40dc06195fc01cdaaf8433d5d4a6542075bad13684",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/self_test.py": {
+      "sha256": "f0d7490eabfaea354c277f4deef135b0473e9d622517a3345b2a103b206feec5",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/start_migration.py": {
+      "sha256": "073a0d4371b970981ae7093bb539820f3ff8caf29cedc22260201ed15a961dab",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/ui_evidence.py": {
+      "sha256": "73680a7c0eca2bfd8aed3383843914e20068c8e093bfe104ff0320ac54767c92",
+      "mode": "0o644"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/scripts/ui_state_manifest.py": {
+      "sha256": "2c43d7fe9ee1dcdc0427e5d16e26fcf0dc4c0930533a456e830ea1253a374710",
+      "mode": "0o755"
+    },
+    "frameworks/ios-to-harmony-migrator-v2/third-party-skills.lock.json": {
+      "sha256": "237c9544217db1ca6ed72f6e87c363ef9bcea6bfbd8f2164c4e7fc92286201bc",
+      "mode": "0o644"
+    },
+    "installers/adopt-project.sh": {
+      "sha256": "62500e6c4c63691d5fb8aee72b0db0fe0245d4d18c55d2dca1240f484d05c3fd",
+      "mode": "0o755"
+    },
+    "installers/audit-project.sh": {
+      "sha256": "2f1d80b142d6707a0b624b00857f168527c5cc4b1365f350826db35060f6cdf7",
+      "mode": "0o755"
+    },
+    "installers/bootstrap_read_policy.py": {
+      "sha256": "1bac8e13bfd5378f4865d50e80418eacacba606e553e2d11228647873d76e631",
+      "mode": "0o644"
+    },
+    "installers/doctor.sh": {
+      "sha256": "2b712b48c677c186c0c5399695fa64bfe188a8b83a69ec46e383aaf5f823826d",
+      "mode": "0o755"
+    },
+    "installers/install-this-mac.sh": {
+      "sha256": "1229285c1eac0c87b926dd1b44d38e782987fc0b7a4d0079b89aef94b237666d",
+      "mode": "0o755"
+    },
+    "installers/package-release.sh": {
+      "sha256": "37bc8a674839299902ba0b5599886e8c301d95962d416a2663083fe4affe1a26",
+      "mode": "0o755"
+    },
+    "installers/pin_release.py": {
+      "sha256": "82e32da4ab7f24b9f8957ec50562d778c3c1d35ae5e71a64b6b5ca6e288401c7",
+      "mode": "0o644"
+    },
+    "installers/project_framework.py": {
+      "sha256": "d508369749c8b8a81de3b9107eccc7f98bfd019d06c57045abc25039dc5c784b",
+      "mode": "0o755"
+    },
+    "installers/setup-project.sh": {
+      "sha256": "7d4a4a69203e1872a90444a134588558e75731cceaaeb985a39d07913c7fd57b",
+      "mode": "0o755"
+    },
+    "installers/transactional_files.py": {
+      "sha256": "935d822de518e524fabf6c536022be43b3206b8b077e6aec50635a38994a738b",
+      "mode": "0o644"
+    },
+    "installers/update-installation.sh": {
+      "sha256": "33cd634d40badeaca81c0af496f6f4b5b2eca25ed6a60b7fa4275673868128f3",
+      "mode": "0o755"
+    },
+    "installers/update-project.sh": {
+      "sha256": "006ad10eb670e434d386e863f24ac653bacfac130dec40c4642ad9a6c1f756b6",
+      "mode": "0o755"
+    },
+    "installers/upgrade_self_test.py": {
+      "sha256": "9f41b6915c847f94c9348a268e8f958c607926f763a173ec6aa23c83555ab1b6",
+      "mode": "0o644"
+    },
+    "shared/code-quality/code-quality-contract.md": {
+      "sha256": "32fd3094ab89bc0d31e21677eb51400d443c55a355345452a93e38b5bbb48648",
+      "mode": "0o644"
+    },
+    "shared/context-engineering/context-policy.md": {
+      "sha256": "04367beb7170f12d23ac05d030de9c4ac7ade06a8a6dde8432dd77eb5985c01d",
+      "mode": "0o644"
+    },
+    "shared/context-engineering/read-boundary.md": {
+      "sha256": "02d02692534beae18263aff20623f64d7c6484084ffd6f1d5eacd5e98aae7f17",
+      "mode": "0o644"
+    },
+    "shared/context-engineering/task-control.md": {
+      "sha256": "3dee7d46b6fad8f3825b59e94e2fdfd31e43dd8fedcc26d1c7769f42bf627d61",
+      "mode": "0o644"
+    },
+    "shared/lifecycle/lifecycle.md": {
+      "sha256": "7534ab68c3b46baa0ae6255a21f88b0cead29c8356af0cf7e5516bef8a7d4bd8",
+      "mode": "0o644"
+    },
+    "shared/project-detection/detect_project_capabilities.py": {
+      "sha256": "96181cdd6f4c94e86bf739cd59931fd25f1e0829b68dbef27a7467291f77e2c6",
+      "mode": "0o755"
+    },
+    "shared/schemas/metadata-ack.schema.json": {
+      "sha256": "c85ccd71753f5244bb175a5b6fe73c51c9c63943277ccec7ef97ee56c136813d",
+      "mode": "0o644"
+    },
+    "shared/schemas/task-context.schema.json": {
+      "sha256": "360ad76b5c876e8295db5bc3988f21dd1f9c46e94701237175623e384e0b9451",
+      "mode": "0o644"
+    },
+    "shared/schemas/temporary-external-grant.schema.json": {
+      "sha256": "a04b5116f41da647634b345ddade51372b1c3f006f8aedad55bf1c3ed536d065",
+      "mode": "0o644"
+    },
+    "shared/task-routing/framework_router.py": {
+      "sha256": "8f2c0ef8946aa1eee2c76d05bfe3758f64a78110fc9aaefe1ada86cdb378468a",
+      "mode": "0o755"
+    },
+    "shared/task-routing/read_boundary.py": {
+      "sha256": "99db315bcd706e4692e3dd6c77da0abfa6eef1165784d0940a265f6f25a1154d",
+      "mode": "0o644"
+    },
+    "shared/task-routing/read_boundary_self_test.py": {
+      "sha256": "5ec83ca1e73fbc0ad7a3cc89028102e376a0b0f4593e6833d025f29f42788264",
+      "mode": "0o644"
+    },
+    "shared/task-routing/runtime_self_test.py": {
+      "sha256": "bf1fbd77542ddb05b96b1228f04803a3278bde82fb7a165acaf99b1042a07a7f",
+      "mode": "0o644"
+    },
+    "shared/task-routing/self_test.py": {
+      "sha256": "6190c1146a7e496b4b51726acbc18d1bfa878921624207e67da2f3457485f96c",
+      "mode": "0o755"
+    },
+    "shared/task-routing/task_router.py": {
+      "sha256": "3fdd47411d570ec0cb3232d87bcf3f035e31dadd2e530c23cf2d9e28c740c07b",
+      "mode": "0o755"
+    },
+    "shared/task-routing/task_runtime.py": {
+      "sha256": "475e1731e8d465a1d9e15c6adaddcb6996042cfbbaac217d5665f544c6559570",
+      "mode": "0o644"
+    },
+    "shared/task-routing/task_scope_self_test.py": {
+      "sha256": "7d64345fff1a88653934f198e1fc6547f430ed68457a56b827d2548f9a7e40ad",
+      "mode": "0o644"
+    },
+    "shared/verification-budget/verification-budget.md": {
+      "sha256": "deb9cbbd392ad0a522402e1e7fbf7b3f7520b7791ed0b293c40400748a6f6849",
+      "mode": "0o644"
+    }
+  }
+}

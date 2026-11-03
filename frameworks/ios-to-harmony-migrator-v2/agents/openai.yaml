@@ -1,0 +1,6 @@
+interface:
+  display_name: "iOS 转鸿蒙迁移 V2"
+  short_description: "按风险选择上下文、模型等级和验证范围的低消耗迁移框架"
+  default_prompt: "使用 $ios-to-harmony-migrator-v2 分析并迁移我提供的 iOS 项目，自动选择最小充分的规则、模型等级和验证范围。"
+policy:
+  allow_implicit_invocation: true

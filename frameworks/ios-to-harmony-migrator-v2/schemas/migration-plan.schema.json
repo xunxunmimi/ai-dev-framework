@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "source", "target", "discovery", "scope", "slices", "risks", "acceptance"],
+  "properties": {
+    "schemaVersion": {"const": "2.0"},
+    "source": {"type": "object", "required": ["root", "revision"]},
+    "target": {"type": "object", "required": ["root", "minimumApi"]},
+    "discovery": {
+      "type": "object",
+      "required": ["baseline", "baselineSha256", "sourceIndexSha256"],
+      "properties": {
+        "baseline": {"const": "ir/discovery-baseline.json"},
+        "baselineSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "sourceIndexSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "scope": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "slices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "sourceRefs", "targetOutcome", "dependencies", "taskLevel", "acceptance"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "sourceRefs": {"type": "array", "minItems": 1},
+          "targetOutcome": {"type": "string", "minLength": 1},
+          "dependencies": {"type": "array"},
+          "taskLevel": {"enum": ["T2", "T3", "T4"]},
+          "acceptance": {"type": "array", "minItems": 1}
+        }
+      }
+    },
+    "risks": {"type": "array"},
+    "acceptance": {"type": "array", "minItems": 1}
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "ai-frameworks:managed-external-grant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "projectRoot",
+    "taskId",
+    "scopeKind",
+    "confirmed",
+    "authorizationSource",
+    "externalRoot",
+    "rootDevice",
+    "rootInode",
+    "file",
+    "expiresAt",
+    "authorizationId",
+    "fileDevice",
+    "fileInode",
+    "fileSize",
+    "fileMtimeNs",
+    "fileCtimeNs"
+  ],
+  "properties": {
+    "projectRoot": {
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "scopeKind": {
+      "const": "external-once"
+    },
+    "confirmed": {
+      "const": true
+    },
+    "authorizationSource": {
+      "type": "string",
+      "minLength": 1
+    },
+    "externalRoot": {
+      "type": "string"
+    },
+    "rootDevice": {
+      "type": "integer"
+    },
+    "rootInode": {
+      "type": "integer"
+    },
+    "file": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authorizationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{15,79}$"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fileDevice": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fileInode": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fileSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fileMtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fileCtimeNs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

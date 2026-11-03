@@ -1,0 +1,16 @@
+[
+  {"id":"route-ios-local-bug","lifecycle":"ios-maintenance","prompt":"修复个人页空名称崩溃","expectedFramework":"ios-daily-development-rules","expectedLevel":"D1"},
+  {"id":"route-ios-feature","lifecycle":"ios-maintenance","prompt":"新增一个 SwiftUI 设置页面","expectedFramework":"ios-daily-development-rules","expectedLevel":"D2"},
+  {"id":"route-migration-active-bug","lifecycle":"migration-active","prompt":"修复当前迁移切片里的返回问题","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-migration-active-page","lifecycle":"migration-active","prompt":"迁移会员中心页面和交互","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-transition-color","lifecycle":"migration-transition","prompt":"修复鸿蒙首页按钮颜色","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D1"},
+  {"id":"route-transition-feature","lifecycle":"migration-transition","prompt":"新增鸿蒙意见反馈页面","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D2"},
+  {"id":"route-transition-release","lifecycle":"migration-transition","prompt":"准备鸿蒙版本打包上线","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D4"},
+  {"id":"route-transition-parity","lifecycle":"migration-transition","prompt":"修复这个页面和苹果端不一致的返回行为","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-transition-parity-batch","lifecycle":"migration-transition","prompt":"测试反馈音频、PDF、图片和结果页共七项 iOS 一致性问题","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-transition-parity-negated","lifecycle":"migration-transition","prompt":"修复七处鸿蒙文案和间距，不涉及 iOS 一致性","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D1"},
+  {"id":"route-transition-missing-ios","lifecycle":"migration-transition","prompt":"补齐 iOS 行为缺失的错误恢复路径","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-transition-evidence","lifecycle":"migration-transition","prompt":"更新迁移矩阵中这个切片的证据","expectedFramework":"ios-to-harmony-migrator-v2","expectedLevel":"T3"},
+  {"id":"route-harmony-history","lifecycle":"harmony-maintenance","prompt":"查看旧迁移历史后修复现在的普通文案问题","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D1"},
+  {"id":"route-harmony-payment","lifecycle":"harmony-maintenance","prompt":"修复支付回调和验签逻辑","expectedFramework":"harmonyos-daily-development-rules","expectedLevel":"D4"}
+]

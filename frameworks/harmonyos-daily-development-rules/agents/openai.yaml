@@ -1,0 +1,4 @@
+interface:
+  display_name: "HarmonyOS Daily Development"
+  short_description: "Risk-based HarmonyOS maintenance and release preparation"
+  default_prompt: "Use $harmonyos-daily-development-rules for this HarmonyOS maintenance task and choose the smallest sufficient context and verification."

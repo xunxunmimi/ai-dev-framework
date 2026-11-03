@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "reviewedAt": "2026-09-17",
+  "skills": [
+    {
+      "name": "ponytail-review",
+      "repository": "https://github.com/DietrichGebert/ponytail",
+      "revision": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+      "path": "skills/ponytail-review",
+      "scope": "one post-diff complexity review for signaled D2/D3 tasks",
+      "hooks": false
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "lanhu",
+      "repository": "https://github.com/dsphper/lanhu-mcp",
+      "revision": "1ec250f10f14a42418f4673f17f08f185f45b9bd",
+      "transport": "stdio",
+      "scope": "conditional read-only design and requirement evidence"
+    }
+  ]
+}

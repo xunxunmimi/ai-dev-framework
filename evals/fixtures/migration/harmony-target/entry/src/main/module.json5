@@ -1,0 +1,7 @@
+{
+  module: {
+    name: 'entry',
+    type: 'entry',
+    srcEntry: './ets/EntryAbility.ets'
+  }
+}

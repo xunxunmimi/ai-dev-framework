@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Development Task Context 2.1",
+  "type": "object",
+  "required": ["schemaVersion", "stage", "intent", "impactLevel", "riskFlags", "scope", "contextBudget", "verificationPlan"],
+  "properties": {
+    "schemaVersion": {"const": "2.1"},
+    "stage": {"enum": ["pre", "post", "final"]},
+    "intent": {"type": "string"},
+    "impactLevel": {"pattern": "^[DT][0-4]$"},
+    "riskFlags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "scope": {"type": "object"},
+    "contextBudget": {"type": "object"},
+    "verificationPlan": {"type": "string"},
+    "mustRead": {"type": "array", "items": {"type": "string"}},
+    "readIfNeeded": {"type": "array", "items": {"type": "string"}},
+    "doNotReadByDefault": {"type": "array", "items": {"type": "string"}},
+    "excludedPreexistingChanges": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

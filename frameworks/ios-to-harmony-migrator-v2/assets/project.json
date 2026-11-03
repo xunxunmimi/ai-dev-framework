@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "2.0",
+  "frameworkVersion": "{{FRAMEWORK_VERSION}}",
+  "projectName": "{{PROJECT_NAME}}",
+  "sourceRoot": "{{SOURCE_ROOT}}",
+  "targetRoot": "{{TARGET_ROOT}}",
+  "frameworkRoot": "{{FRAMEWORK_ROOT}}",
+  "workspaceRoot": "{{WORKSPACE_ROOT}}",
+  "phase": "discovery",
+  "stateFile": "{{WORKSPACE_ROOT}}/state/migration-state.json",
+  "policies": {
+    "theme": "source_behavior",
+    "standardDevice": "project_defined",
+    "sourceReadOnly": true,
+    "fullRegressionProfiles": [
+      "T4"
+    ]
+  },
+  "modelPolicy": {
+    "cost_efficient": null,
+    "balanced": null,
+    "strong": null,
+    "highest": null
+  },
+  "externalTools": {
+    "lanhu": {
+      "mode": "conditional",
+      "authority": "supplemental",
+      "projectUrl": null,
+      "readOnly": true
+    },
+    "ponytailReview": {
+      "mode": "conditional",
+      "maxRunsPerTask": 1
+    }
+  },
+  "modelAvailability": "configure only from the actual host/account supported models; advice is not applied"
+}

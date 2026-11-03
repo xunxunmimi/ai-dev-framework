@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iOS source discovery baseline 2.2",
+  "type": "object",
+  "required": ["schemaVersion", "status", "source", "analysisCoverage", "areas"],
+  "properties": {
+    "schemaVersion": {"const": "2.2"},
+    "status": {"enum": ["discovery-in-progress", "discovery-needs-reconciliation", "ready-for-plan"]},
+    "source": {
+      "type": "object",
+      "required": ["root", "revision", "indexPath", "currentSourceIndexSha256", "analysedSourceIndexSha256"],
+      "properties": {
+        "root": {"type": "string", "minLength": 1},
+        "revision": {"type": "object"},
+        "indexPath": {"const": "ir/source-index.json"},
+        "currentSourceIndexSha256": {"type": "string", "minLength": 64},
+        "analysedSourceIndexSha256": {"type": ["string", "null"]}
+      }
+    },
+    "analysisCoverage": {
+      "type": "object",
+      "required": ["sourceFilesIndexed", "sourceFilesAccountedFor"],
+      "properties": {
+        "sourceFilesIndexed": {"type": "integer", "minimum": 0},
+        "sourceFilesAccountedFor": {"type": "integer", "minimum": 0}
+      }
+    },
+    "areas": {
+      "type": "object",
+      "required": [
+        "projectStructure", "architectureAndModules", "screensAndNavigation",
+        "interactionsAndStates", "featuresAndBusinessFlows", "dependenciesAndLicenses",
+        "dataStorageAndMigration", "networkAndBackendContracts",
+        "permissionsAndSystemCapabilities", "resourcesLocalizationAccessibility",
+        "testsBuildSigningRelease"
+      ],
+      "additionalProperties": {"$ref": "#/$defs/area"}
+    },
+    "decisions": {"type": "array", "items": {"type": "object"}}
+  },
+  "$defs": {
+    "area": {
+      "type": "object",
+      "required": ["status", "summary", "notApplicableReason", "evidenceRefs", "coverage", "items"],
+      "properties": {
+        "status": {"enum": ["pending", "complete", "not_applicable"]},
+        "summary": {"type": "string"},
+        "notApplicableReason": {"type": "string"},
+        "evidenceRefs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "coverage": {
+          "type": "object",
+          "required": ["identified", "mapped", "excluded", "unknown"],
+          "properties": {
+            "identified": {"type": "integer", "minimum": 0},
+            "mapped": {"type": "integer", "minimum": 0},
+            "excluded": {"type": "integer", "minimum": 0},
+            "unknown": {"type": "integer", "minimum": 0}
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "disposition", "sourceRefs"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "disposition": {"enum": ["mapped", "excluded", "unknown"]},
+              "sourceRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+              "evidenceRefs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+              "targetStrategy": {"type": "string"},
+              "reason": {"type": "string"},
+              "severity": {"enum": ["blocking", "non_blocking"]},
+              "resolutionSlice": {"type": "string"},
+              "details": {"type": "object"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

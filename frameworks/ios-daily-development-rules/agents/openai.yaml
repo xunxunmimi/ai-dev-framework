@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS Daily Development"
+  short_description: "Risk-based iOS maintenance with a fast lane for small fixes"
+  default_prompt: "Use $ios-daily-development-rules for this iOS maintenance task and choose the smallest sufficient context and verification."

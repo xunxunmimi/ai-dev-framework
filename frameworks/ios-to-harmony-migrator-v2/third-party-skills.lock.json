@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.1",
+  "reviewedAt": "2026-09-17",
+  "skills": [
+    {
+      "name": "swift-concurrency",
+      "repository": "https://github.com/dpearson2699/swift-ios-skills",
+      "revision": "8d90fd121a263355a4fb44fd082af1416a5c1c2a",
+      "path": "skills/swift-concurrency",
+      "scope": "daily Swift concurrency tasks"
+    },
+    {
+      "name": "swift-testing",
+      "repository": "https://github.com/dpearson2699/swift-ios-skills",
+      "revision": "8d90fd121a263355a4fb44fd082af1416a5c1c2a",
+      "path": "skills/swift-testing",
+      "scope": "daily Swift unit-testing tasks"
+    },
+    {
+      "name": "ios-simulator",
+      "repository": "https://github.com/dpearson2699/swift-ios-skills",
+      "revision": "8d90fd121a263355a4fb44fd082af1416a5c1c2a",
+      "path": "skills/ios-simulator",
+      "scope": "targeted iOS Simulator operation and evidence"
+    },
+    {
+      "name": "arkts-code-check",
+      "repository": "https://github.com/KwaiAppTeam/ks-arkts-skills",
+      "revision": "76b420d7e99c410971e46e278d83369d7de71c4f",
+      "path": "arkts-code-check",
+      "scope": "explicit or compiler-error-driven ArkTS critical checks"
+    },
+    {
+      "name": "ets-lsp-check",
+      "repository": "https://github.com/KwaiAppTeam/ks-arkts-skills",
+      "revision": "76b420d7e99c410971e46e278d83369d7de71c4f",
+      "path": "ets-lsp-check",
+      "scope": "targeted ETS Language Server diagnostics",
+      "localAdaptation": "disabled automatic global npm installation"
+    },
+    {
+      "name": "ponytail-review",
+      "repository": "https://github.com/DietrichGebert/ponytail",
+      "revision": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+      "path": "skills/ponytail-review",
+      "scope": "one post-diff complexity review for signaled T2/T3 tasks",
+      "localAdaptation": "installed as a single Skill; plugin lifecycle hooks excluded"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "lanhu",
+      "repository": "https://github.com/dsphper/lanhu-mcp",
+      "revision": "1ec250f10f14a42418f4673f17f08f185f45b9bd",
+      "transport": "stdio",
+      "scope": "conditional read-only design and requirement evidence",
+      "localAdaptation": "write/message tools excluded with an enabled_tools allowlist"
+    }
+  ]
+}

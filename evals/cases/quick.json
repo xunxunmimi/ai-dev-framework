@@ -1,0 +1,263 @@
+[
+  {
+    "id": "ios-quick-d0-comment",
+    "suite": "quick",
+    "framework": "ios-daily-development-rules",
+    "fixture": "ios",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "ios-daily", "{workspace}"]}],
+    "prompt": "修正 Sources/ProfileViewController.swift 中误导性的注释和显示文案拼写。只做局部修改，不构建、不启动模拟器、不写报告。",
+    "expected": {
+      "framework": "ios-daily-development-rules",
+      "levels": ["D0"],
+      "allowedChangedFiles": ["Sources/ProfileViewController.swift"],
+      "forbiddenChangedFiles": ["**/*.pbxproj", "AGENTS.md", ".ai-project/**"],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user", "not-needed"]
+    }
+  },
+  {
+    "id": "ios-quick-d1-nil-guard",
+    "suite": "quick",
+    "framework": "ios-daily-development-rules",
+    "fixture": "ios",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "ios-daily", "{workspace}"]}],
+    "prompt": "修复 Sources/ProfileViewController.swift 中 displayName 为 nil 时的崩溃。保持行为和结构不变，做最小修复；无需构建、模拟器或报告，App 运行验收由用户完成。",
+    "expected": {
+      "framework": "ios-daily-development-rules",
+      "levels": ["D1"],
+      "allowedChangedFiles": ["Sources/ProfileViewController.swift"],
+      "forbiddenChangedFiles": ["**/*.pbxproj", "AGENTS.md", ".ai-project/**"],
+      "contentChecks": [{"path": "Sources/ProfileViewController.swift", "contains": ["displayName ??"], "notContains": ["displayName!"]}],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user"]
+    }
+  },
+  {
+    "id": "ios-quick-d2-settings-state",
+    "suite": "quick",
+    "framework": "ios-daily-development-rules",
+    "fixture": "ios",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "ios-daily", "{workspace}"]}],
+    "prompt": "修复 Sources/SettingsStore.swift：saveNotificationsEnabled 写入持久化后也应同步当前内存状态。保持单一状态来源，不增加无关抽象，并做与风险相称的静态验证。",
+    "expected": {
+      "framework": "ios-daily-development-rules",
+      "levels": ["D2"],
+      "allowedChangedFiles": ["Sources/SettingsStore.swift"],
+      "forbiddenChangedFiles": ["**/*.pbxproj", "AGENTS.md", ".ai-project/**"],
+      "contentChecks": [{"path": "Sources/SettingsStore.swift", "contains": ["notificationsEnabled = enabled"]}],
+      "maxBuildCommands": 1,
+      "maxTestCommands": 1,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user", "agent"]
+    }
+  },
+  {
+    "id": "ios-quick-d3-subscription-contract",
+    "suite": "quick",
+    "framework": "ios-daily-development-rules",
+    "fixture": "ios",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "ios-daily", "{workspace}"]}],
+    "prompt": "为 Sources/SubscriptionService.swift 增加可替换的会员权益查询边界，供后续真实服务接入。接口要小、命名清晰、关键约束有注释，不要引入第三方库或推测性分层。",
+    "expected": {
+      "framework": "ios-daily-development-rules",
+      "levels": ["D3"],
+      "allowedChangedFiles": ["Sources/SubscriptionService.swift", "Sources/*.swift"],
+      "forbiddenChangedFiles": ["**/*.pbxproj", "AGENTS.md", ".ai-project/**"],
+      "maxBuildCommands": 1,
+      "maxTestCommands": 1,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 1,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user", "agent"]
+    }
+  },
+  {
+    "id": "harmony-quick-d1-color",
+    "suite": "quick",
+    "framework": "harmonyos-daily-development-rules",
+    "fixture": "harmony",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "harmony-daily", "{workspace}"]}],
+    "prompt": "把 entry/src/main/ets/pages/Index.ets 的标题颜色改为系统主文本色，只改这个视觉问题。不构建、不启动设备、不写报告。",
+    "expected": {
+      "framework": "harmonyos-daily-development-rules",
+      "levels": ["D1"],
+      "allowedChangedFiles": ["entry/src/main/ets/pages/Index.ets"],
+      "forbiddenChangedFiles": ["build-profile.json5", "oh-package*.json5", "AGENTS.md", ".ai-project/**"],
+      "contentChecks": [{"path": "entry/src/main/ets/pages/Index.ets", "contains": ["$r("], "notContains": ["#999999"]}],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user"]
+    }
+  },
+  {
+    "id": "harmony-quick-d1-null-guard",
+    "suite": "quick",
+    "framework": "harmonyos-daily-development-rules",
+    "fixture": "harmony",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "harmony-daily", "{workspace}"]}],
+    "prompt": "修复 entry/src/main/ets/pages/Index.ets 中 title 未初始化时的非空断言风险，提供合理默认值并保持最小改动。无需构建、设备或报告。",
+    "expected": {
+      "framework": "harmonyos-daily-development-rules",
+      "levels": ["D1"],
+      "allowedChangedFiles": ["entry/src/main/ets/pages/Index.ets"],
+      "forbiddenChangedFiles": ["build-profile.json5", "oh-package*.json5", "AGENTS.md", ".ai-project/**"],
+      "contentChecks": [{"path": "entry/src/main/ets/pages/Index.ets", "contains": ["??"], "notContains": ["this.title!"]}],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user"]
+    }
+  },
+  {
+    "id": "harmony-quick-d2-settings-state",
+    "suite": "quick",
+    "framework": "harmonyos-daily-development-rules",
+    "fixture": "harmony",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "harmony-daily", "{workspace}"]}],
+    "prompt": "修复 entry/src/main/ets/features/SettingsPage.ets：切换主题后页面状态必须立即更新，状态所有权要清晰，不新增无关层。做与风险相称的静态验证。",
+    "expected": {
+      "framework": "harmonyos-daily-development-rules",
+      "levels": ["D2"],
+      "allowedChangedFiles": ["entry/src/main/ets/features/SettingsPage.ets"],
+      "forbiddenChangedFiles": ["build-profile.json5", "oh-package*.json5", "AGENTS.md", ".ai-project/**"],
+      "contentChecks": [{"path": "entry/src/main/ets/features/SettingsPage.ets", "contains": ["this.enabled = value"]}],
+      "maxBuildCommands": 1,
+      "maxTestCommands": 1,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user", "agent"]
+    }
+  },
+  {
+    "id": "harmony-quick-d4-payment-diagnosis",
+    "suite": "quick",
+    "framework": "harmonyos-daily-development-rules",
+    "fixture": "harmony",
+    "workdir": ".",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "harmony-daily", "{workspace}"]}],
+    "prompt": "只诊断上线前支付验签缺少真实商户和真机证据的问题，给出阻塞与最小下一步。不要修改代码、签名或配置，不调用外部服务，不构建。",
+    "expected": {
+      "framework": "harmonyos-daily-development-rules",
+      "levels": ["D4"],
+      "allowedChangedFiles": [],
+      "forbiddenChangedFiles": ["**/*"],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": true,
+      "runtimeAcceptance": ["blocked", "user"]
+    }
+  },
+  {
+    "id": "migration-quick-phase0-init",
+    "suite": "quick",
+    "framework": "ios-to-harmony-migrator-v2",
+    "fixture": "migration",
+    "workdir": ".",
+    "prompt": "初始化 iOS 到 HarmonyOS 的迁移：源项目是 {workspace}/ios-source，目标项目是 {workspace}/harmony-target。本轮只完成初始化和 Phase 0 源项目发现，不写 HarmonyOS 业务代码。",
+    "expected": {
+      "framework": "ios-to-harmony-migrator-v2",
+      "levels": ["T3"],
+      "allowedChangedFiles": ["harmony-target/AGENTS.md", "harmony-target/.migration-v2/**", "harmony-target/.migration-workspace-v2/**", "harmony-target/.ai-project/**"],
+      "forbiddenChangedFiles": ["harmony-target/entry/src/main/ets/**"],
+      "requiredArtifacts": ["harmony-target/.migration-workspace-v2/ir/source-index.json", "harmony-target/.migration-workspace-v2/ir/discovery-baseline.json"],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 1,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["not-needed", "user"]
+    }
+  },
+  {
+    "id": "migration-quick-incomplete-gate",
+    "suite": "quick",
+    "framework": "ios-to-harmony-migrator-v2",
+    "fixture": "migration",
+    "workdir": "harmony-target",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "migration", "{workspace}/ios-source", "{workspace}/harmony-target"]}],
+    "prompt": "开始迁移设置页面；如果 Phase 0 发现基线或迁移计划还不完整，必须停在门禁处，只说明缺项，不修改业务代码。",
+    "expected": {
+      "framework": "ios-to-harmony-migrator-v2",
+      "levels": ["T3"],
+      "allowedChangedFiles": ["harmony-target/.migration-workspace-v2/**", "harmony-target/.ai-project/**"],
+      "forbiddenChangedFiles": ["harmony-target/entry/src/main/ets/**"],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 1,
+      "allowNoChanges": true,
+      "runtimeAcceptance": ["blocked", "user"]
+    }
+  },
+  {
+    "id": "migration-quick-transition-routing",
+    "suite": "quick",
+    "framework": "ios-to-harmony-migrator-v2",
+    "fixture": "migration",
+    "workdir": "harmony-target",
+    "setup": [
+      {"argv": ["{suite}/installers/setup-project.sh", "migration", "{workspace}/ios-source", "{workspace}/harmony-target"]},
+      {"argv": ["{suite}/installers/setup-project.sh", "harmony-transition", "{workspace}/harmony-target"]}
+    ],
+    "prompt": "项目已进入迁移过渡期。现在只修复首页普通按钮颜色，不涉及 iOS 等价性。请选择正确的主框架并最小修改。",
+    "expected": {
+      "framework": "harmonyos-daily-development-rules",
+      "levels": ["D1"],
+      "allowedChangedFiles": ["harmony-target/entry/src/main/ets/pages/Index.ets"],
+      "forbiddenChangedFiles": ["harmony-target/.migration-workspace-v2/**", "harmony-target/.ai-project/**", "harmony-target/AGENTS.md"],
+      "contentChecks": [{"path": "harmony-target/entry/src/main/ets/pages/Index.ets", "contains": ["$r("], "notContains": ["#999999"]}],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 0,
+      "allowNoChanges": false,
+      "runtimeAcceptance": ["user"]
+    }
+  },
+  {
+    "id": "migration-quick-source-change-audit",
+    "suite": "quick",
+    "framework": "ios-to-harmony-migrator-v2",
+    "fixture": "migration",
+    "workdir": "harmony-target",
+    "setup": [{"argv": ["{suite}/installers/setup-project.sh", "migration", "{workspace}/ios-source", "{workspace}/harmony-target"]}],
+    "prompt": "只检查当前 iOS 源项目是否发生会使 Phase 0 发现基线或迁移计划失效的变化；不要修改 HarmonyOS 业务代码，不重新全量实现。",
+    "expected": {
+      "framework": "ios-to-harmony-migrator-v2",
+      "levels": ["T3"],
+      "allowedChangedFiles": ["harmony-target/.migration-workspace-v2/**", "harmony-target/.ai-project/**"],
+      "forbiddenChangedFiles": ["harmony-target/entry/src/main/ets/**"],
+      "maxBuildCommands": 0,
+      "maxTestCommands": 0,
+      "maxSimulatorCommands": 0,
+      "maxReportFiles": 1,
+      "allowNoChanges": true,
+      "runtimeAcceptance": ["blocked", "not-needed", "user"]
+    }
+  }
+]

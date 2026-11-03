@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "suite", "framework", "prompt", "expected"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "suite": {"enum": ["quick", "real"]},
+    "framework": {
+      "enum": ["ios-to-harmony-migrator-v2", "ios-daily-development-rules", "harmonyos-daily-development-rules"]
+    },
+    "prompt": {"type": "string", "minLength": 1},
+    "fixture": {"type": "string"},
+    "workdir": {"type": "string"},
+    "setup": {"type": "array"},
+    "repository": {"type": "object"},
+    "expected": {
+      "type": "object",
+      "required": ["framework", "levels"],
+      "properties": {
+        "framework": {"type": "string"},
+        "levels": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "allowedChangedFiles": {"type": "array", "items": {"type": "string"}},
+        "forbiddenChangedFiles": {"type": "array", "items": {"type": "string"}},
+        "requiredArtifacts": {"type": "array", "items": {"type": "string"}},
+        "forbiddenArtifacts": {"type": "array", "items": {"type": "string"}},
+        "contentChecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {"type": "string"},
+              "contains": {"type": "array", "items": {"type": "string"}},
+              "notContains": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        },
+        "maxBuildCommands": {"type": "integer", "minimum": 0},
+        "maxTestCommands": {"type": "integer", "minimum": 0},
+        "maxSimulatorCommands": {"type": "integer", "minimum": 0},
+        "maxReportFiles": {"type": "integer", "minimum": 0},
+        "allowNoChanges": {"type": "boolean"},
+        "runtimeAcceptance": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

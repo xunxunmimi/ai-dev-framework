@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": {
+    "criticalUnderclassification": 0,
+    "classificationPassRate": 0.9,
+    "unrelatedChangedFilesPerTask": 0,
+    "qualityRegressionPoints": 0,
+    "quickSuitePassRate": 0.95
+  },
+  "commandPatterns": {
+    "build": "(?i)(xcodebuild|swift\\s+build|hvigor|assemblehap|assemblehar|build-profile)",
+    "test": "(?i)(xcodebuild.*\\btest\\b|swift\\s+test|ohostest|uitest|pytest|npm\\s+test)",
+    "simulator": "(?i)(simctl|ios-simulator|emulator|createLocalEmulator|startLocalEmulator)",
+    "reportPath": "(^|/)(reports?|review|artifacts?)(/|$)|(^|/)(review_report|gate-report)"
+  }
+}

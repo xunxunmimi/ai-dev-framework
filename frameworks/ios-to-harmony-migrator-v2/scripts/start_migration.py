@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Initialize or resume a compact, risk-routed migration control center."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from analyze_source import prepare_discovery
+from classify_task import route_tools
+from detect_gates import detect as detect_gates
+from migration_state import ensure_state
+from read_boundary import require_complete
+
+
+def nested(a: Path, b: Path) -> bool:
+    return a == b or a in b.parents or b in a.parents
+
+
+def render(source: Path, destination: Path, values: dict[str, str]) -> None:
+    text = source.read_text(encoding="utf-8")
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    destination.write_text(text, encoding="utf-8")
+
+
+def copy_managed(source: Path, destination: Path, marker: str) -> None:
+    if destination.exists() and marker not in destination.read_text(encoding="utf-8"):
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("source", type=Path)
+    parser.add_argument("target", type=Path, nargs="?")
+    parser.add_argument("--name")
+    args = parser.parse_args()
+    framework = Path(__file__).resolve().parent.parent
+    suite = framework.parents[1]
+    source = args.source.expanduser().resolve()
+    target = args.target.expanduser().resolve() if args.target else source.parent / f"{source.name}_harmonyos"
+    require_complete(source)
+    require_complete(target)
+    if not source.is_dir():
+        raise SystemExit(f"iOS source does not exist: {source}")
+    if nested(source, target):
+        raise SystemExit("source and target cannot be equal or nested")
+    target.mkdir(parents=True, exist_ok=True)
+    control = target / ".migration-v2"
+    workspace = target / ".migration-workspace-v2"
+    ai_project = target / ".ai-project"
+    control.mkdir(exist_ok=True)
+    ai_project.mkdir(exist_ok=True)
+    for name in ("ir", "reports", "evidence", "cache", "state"):
+        (workspace / name).mkdir(parents=True, exist_ok=True)
+    discovery = prepare_discovery(source, workspace)
+    quality_contract = control / "references/code-quality-contract.md"
+    copy_managed(
+        suite / "shared/code-quality/code-quality-contract.md",
+        quality_contract,
+        "<!-- ai-frameworks:managed-code-quality-contract -->",
+    )
+    project_file = control / "project.json"
+    values = {
+        "PROJECT_NAME": args.name or source.name,
+        "SOURCE_ROOT": str(source),
+        "TARGET_ROOT": str(target),
+        "FRAMEWORK_ROOT": str(framework),
+        "WORKSPACE_ROOT": str(workspace),
+        "FRAMEWORK_VERSION": (suite / "VERSION").read_text(encoding="utf-8").strip(),
+    }
+    if project_file.exists():
+        existing = json.loads(project_file.read_text(encoding="utf-8"))
+        if Path(existing["sourceRoot"]).resolve() != source or Path(existing["targetRoot"]).resolve() != target:
+            raise SystemExit("existing V2 control center belongs to different source or target")
+        existing["frameworkRoot"] = str(framework)
+        existing["frameworkVersion"] = values["FRAMEWORK_VERSION"]
+        existing["stateFile"] = str(workspace / "state/migration-state.json")
+        project_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        mode = "resume"
+    else:
+        render(framework / "assets/project.json", project_file, values)
+        render(framework / "assets/project-agents.md", control / "AGENTS.md", values)
+        render(framework / "assets/gate-config.json", control / "gate-config.json", values)
+        render(framework / "assets/current.md", control / "CURRENT.md", values)
+        mode = "new"
+    gate_config_path = control / "gate-config.json"
+    gate_config = json.loads(gate_config_path.read_text(encoding="utf-8")) if gate_config_path.is_file() else {}
+    if not gate_config.get("gates"):
+        gate_config_path.write_text(json.dumps(detect_gates(target, workspace), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    project_config = json.loads(project_file.read_text(encoding="utf-8"))
+    lifecycle_file = ai_project / "lifecycle.json"
+    lifecycle = json.loads(lifecycle_file.read_text(encoding="utf-8")) if lifecycle_file.exists() else {
+        "schemaVersion": "1.0",
+        "state": "migration-active",
+        "defaultFramework": "ios-to-harmony-migrator-v2",
+        "migrationFramework": "active",
+        "routing": "one-primary-framework-per-task",
+    }
+    lifecycle["frameworkVersion"] = values["FRAMEWORK_VERSION"]
+    lifecycle_file.write_text(json.dumps(lifecycle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    ensure_state(workspace)
+    context = {
+        "schemaVersion": "2.1",
+        "mode": mode,
+        "stage": "pre",
+        "intent": "migration",
+        "impactLevel": "T3",
+        "taskLevel": "T3",
+        "reason": "Phase 0 source discovery and migration planning",
+        "riskFlags": [],
+        "confidence": "high",
+        "modelClass": "strong",
+        "mustRead": [
+            str(framework / "references/core-contract.md"),
+            str(framework / "references/migration-workflow.md"),
+            str(framework / "references/source-analysis.md"),
+            str(framework / "references/discovery-gate.md"),
+            discovery["discoveryBaseline"],
+            str(quality_contract),
+            str(framework / "references/code-quality-migration.md"),
+            str(control / "project.json"),
+            str(control / "CURRENT.md"),
+        ],
+        "read": [
+            str(framework / "references/core-contract.md"),
+            str(framework / "references/migration-workflow.md"),
+            str(framework / "references/source-analysis.md"),
+            str(framework / "references/discovery-gate.md"),
+            discovery["discoveryBaseline"],
+            str(quality_contract),
+            str(framework / "references/code-quality-migration.md"),
+            str(control / "project.json"),
+            str(control / "CURRENT.md"),
+        ],
+        "readIfNeeded": [discovery["sourceIndex"]],
+        "doNotReadByDefault": ["historical reports", "raw logs", "unaffected modules"],
+        "scope": {"taskFiles": [], "fileCount": 0, "moduleCount": 0},
+        "contextBudget": {"maxPrimaryFiles": 28, "history": "summary-only", "rawLogs": "pointer-only"},
+        "verificationPlan": "cross-module-contracts",
+        "gateProfile": "T3",
+        "toolRouting": route_tools("继续迁移页面", "T3", project_config),
+    }
+    (control / "task-context.json").write_text(
+        json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    pointer = target / "AGENTS.md"
+    if not pointer.exists():
+        pointer.write_text((control / "AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8")
+    sys.path.insert(0, str(suite / "installers"))
+    from project_framework import record_manifest
+    record_manifest(
+        target,
+        suite,
+        "ios-to-harmony-migrator-v2",
+        lifecycle.get("state", "migration-active"),
+        [(".migration-v2/references/code-quality-contract.md", "shared/code-quality/code-quality-contract.md")],
+    )
+    print(json.dumps({"status": mode, "control": str(control), "workspace": str(workspace)}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

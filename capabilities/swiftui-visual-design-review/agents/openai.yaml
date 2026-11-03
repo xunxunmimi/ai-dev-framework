@@ -1,0 +1,4 @@
+interface:
+  display_name: "SwiftUI Visual Design Review"
+  short_description: "Design and review distinctive native SwiftUI interfaces"
+  default_prompt: "Use $swiftui-visual-design-review to improve this SwiftUI interface while preserving its brand and behavior."

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2.0",
+  "targetRoot": "{{TARGET_ROOT}}",
+  "evidenceRoot": "{{WORKSPACE_ROOT}}/evidence/gates",
+  "profiles": {
+    "T0": [],
+    "T1": [],
+    "T2": [],
+    "T3": [],
+    "T4": []
+  },
+  "gates": []
+}

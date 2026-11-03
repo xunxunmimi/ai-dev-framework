@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "framework": {
+      "enum": [
+        "ios-to-harmony-migrator-v2",
+        "ios-daily-development-rules",
+        "harmonyos-daily-development-rules",
+        "none"
+      ]
+    },
+    "taskLevel": {
+      "enum": ["D0", "D1", "D2", "D3", "D4", "T0", "T1", "T2", "T3", "T4", "unknown"]
+    },
+    "changedFiles": {"type": "array", "items": {"type": "string"}},
+    "verification": {"type": "array", "items": {"type": "string"}},
+    "runtimeAcceptance": {
+      "description": "运行验收责任。D0/D1 行为改动通常为 user；只有纯文档/注释等无需运行时才是 not-needed；Agent 实际完成运行验收才是 agent；缺外部条件时是 blocked。",
+      "enum": ["user", "agent", "not-needed", "blocked"]
+    },
+    "summary": {"type": "string"},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["framework", "taskLevel", "changedFiles", "verification", "runtimeAcceptance", "summary", "blockers"],
+  "additionalProperties": false
+}

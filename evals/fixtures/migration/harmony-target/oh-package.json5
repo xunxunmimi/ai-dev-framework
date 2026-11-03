@@ -1,0 +1,5 @@
+{
+  name: 'eval-migration-target',
+  version: '1.0.0',
+  dependencies: {}
+}

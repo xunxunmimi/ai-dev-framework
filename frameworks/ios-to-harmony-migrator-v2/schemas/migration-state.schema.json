@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iOS to HarmonyOS migration execution state",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "frameworkVersion",
+    "phase",
+    "status",
+    "completedSlices",
+    "blockers",
+    "evidence",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "frameworkVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "enum": [
+        "discovery",
+        "planning",
+        "implementation",
+        "transition",
+        "release"
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "waiting-human",
+        "blocked",
+        "complete"
+      ]
+    },
+    "activeSlice": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completedSlices": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "activeTaskId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

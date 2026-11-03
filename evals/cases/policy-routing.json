@@ -1,0 +1,22 @@
+[
+  {"id":"local-color","request":"把标题颜色改成红色","files":["Sources/Home.swift"],"expected":"D1"},
+  {"id":"payment-copy","request":"修复支付页面发布按钮颜色","files":["Sources/Payment.swift"],"expected":"D1"},
+  {"id":"login-copy","request":"修改登录失败提示文案","files":["Sources/Login.swift"],"expected":"D1"},
+  {"id":"delete-color","request":"修改删除按钮颜色","files":["Sources/Home.swift"],"expected":"D1"},
+  {"id":"nil-guard","request":"修复已定位的空值崩溃","files":["Sources/Home.swift"],"expected":"D1"},
+  {"id":"doc","request":"修正文档说明","files":["README.md"],"expected":"D0"},
+  {"id":"feature","request":"新增设置页面","files":["Sources/Settings.swift"],"expected":"D2"},
+  {"id":"state","request":"修复状态恢复","files":["Sources/Settings.swift"],"expected":"D2"},
+  {"id":"permissions","request":"修改网络权限配置","files":["entry/src/main/module.json5"],"expected":"D2","requiredChecks":["permission-manifest-and-denial"]},
+  {"id":"entitlements","request":"调整能力配置","files":["App.entitlements"],"expected":"D2"},
+  {"id":"app-ui","request":"把全App所有页面统一视觉布局和字体颜色","files":[],"expected":"D3"},
+  {"id":"shared-contract","request":"修改公共接口","files":["Sources/API.swift"],"expected":"D3"},
+  {"id":"dependency","request":"升级依赖","files":["Podfile"],"expected":"D3"},
+  {"id":"gate-config","request":"调整门禁配置","files":[".migration-v2/gate-config.json"],"expected":"D3"},
+  {"id":"payment-short","request":"修复支付失败","files":["Sources/Payment.swift"],"expected":"D4","requiredChecks":["payment-failure-recovery-idempotency"],"releaseRequired":false},
+  {"id":"login-short","request":"修复登录失败","files":["Sources/Login.swift"],"expected":"D4","requiredChecks":["account-state-failure-recovery"],"releaseRequired":false},
+  {"id":"receipt","request":"修复支付回调验签","files":["Sources/Payment.swift"],"expected":"D4"},
+  {"id":"data-upgrade","request":"数据库迁移失败恢复","files":["Sources/Store.swift"],"expected":"D4"},
+  {"id":"signing","request":"调整发布签名证书","files":["build-profile.json5"],"expected":"D4","releaseRequired":true},
+  {"id":"release","request":"准备上线并提交审核","files":[],"expected":"D4","requiredChecks":["release-build","applicable-real-device"],"releaseRequired":true}
+]

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "overallPass": {"type": "boolean"},
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"enum": ["correctness", "readability", "structure", "comments", "extensibility", "scope", "ui_interaction"]},
+          "pass": {"type": "boolean"},
+          "score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "evidence": {"type": "string"}
+        },
+        "required": ["id", "pass", "score", "evidence"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["overallPass", "score", "checks"],
+  "additionalProperties": false
+}
