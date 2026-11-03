@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task-only bootstrap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scopeKind", "confirmed", "taskId", "projectRoot", "authorizationSource", "scopeDescription", "allowFiles", "identityFiles", "editableFiles", "denyDirectories", "platform", "identitySelection"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "scopeKind": {"const": "task-only"},
+    "confirmed": {"const": true},
+    "taskId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"},
+    "projectRoot": {"type": "string", "minLength": 1},
+    "authorizationSource": {"type": "string", "minLength": 1},
+    "scopeDescription": {"type": "string", "minLength": 1},
+    "allowFiles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "identityFiles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "editableFiles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "denyDirectories": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "platform": {"enum": ["ios", "harmonyos"]},
+    "identitySelection": {"type": "object", "additionalProperties": false, "properties": {"bundleId": {"type": "string", "maxLength": 256}, "scheme": {"type": "string", "maxLength": 256}, "product": {"type": "string", "maxLength": 256}, "module": {"type": "string", "maxLength": 256}, "buildMode": {"type": "string", "maxLength": 256}}}
+  }
+}

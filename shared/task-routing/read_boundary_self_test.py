@@ -221,7 +221,102 @@ class ReadBoundaryScenarios(unittest.TestCase):
         report = verify_configuration(self.root, 'scope')
         self.assertEqual(report['status'], 'passed')
         validate_report(self.root, report, 'scope', 'D0')
-        self.assertEqual(report['coverage']['uninspected'], [])
+        self.assertIn('credential-name-exclusions', report['coverage']['uninspected'])
+
+    def test_complete_snapshot_skips_credential_names_before_stat_open_or_hash(self):
+        """合成凭据不被 stat、打开或加入摘要；正常业务文件仍被读取。"""
+        self.policy.update(mode='complete', allow=['**'], deny=[], scopeDescription='合成完整范围')
+        self.write_policy()
+        names = ['.test/credentials.local.json', '.test/CREDENTIALS.LOCAL.JSON', '.test/client_secret.json', '.test/api-key.dev.json', '.test/.env.production', '.test/signing.p8', '.test/secrets/password.txt']
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('synthetic secret')
+        (self.root / '.test/public.json').write_text('ordinary data')
+        original_stat, original_open = os.stat, os.open
+        forbidden = {'credentials.local.json', 'CREDENTIALS.LOCAL.JSON', 'client_secret.json', 'api-key.dev.json', '.env.production', 'signing.p8', 'secrets'}
+        def check_stat(path, *args, **kwargs):
+            if str(path) in forbidden: raise AssertionError('stat credential')
+            return original_stat(path, *args, **kwargs)
+        def check_open(path, *args, **kwargs):
+            if str(path) in forbidden: raise AssertionError('open credential')
+            return original_open(path, *args, **kwargs)
+        with mock.patch('os.stat', side_effect=check_stat), mock.patch('os.open', side_effect=check_open):
+            result = capture_snapshot(self.root)
+        self.assertIn('.test/public.json', result['paths'])
+        self.assertFalse(set(names) & set(result['paths']))
+        self.assertEqual(result['coverage']['status'], 'complete')
+        self.assertIn('not inspected', result['coverage']['credentialExclusionPolicy'])
+        with self.assertRaises(BoundaryError): ReadBoundary(self.root).read_bytes('.test/credentials.local.json')
+
+    def test_local_configuration_skipped_before_stat_open_hash_in_complete_scope(self):
+        """同名合成配置及本机配置目录先按名字剪枝，完整范围如实标注。"""
+        self.policy.update(mode='complete', allow=['**'], deny=[], scopeDescription='合成完整范围')
+        self.write_policy()
+        names = ['entry/src/main/resources/rawfile/sample_app_account.local.json', 'entry/src/main/resources/rawfile/sample_app_account.dev.local.json', 'entry/src/main/resources/rawfile/SAMPLE_APP_ACCOUNT.DEV.LOCAL.JSON', 'entry/src/main/resources/rawfile/profile.local/nested.json']
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('synthetic-sensitive-config')
+        normal = self.root / 'entry/src/main/resources/rawfile/public.json'
+        normal.write_text('ordinary')
+        forbidden = {'sample_app_account.local.json', 'sample_app_account.dev.local.json', 'SAMPLE_APP_ACCOUNT.DEV.LOCAL.JSON', 'profile.local'}
+        stat0, open0 = os.stat, os.open
+        def stat_guard(path, *args, **kwargs):
+            if str(path) in forbidden: raise AssertionError('stat local config')
+            return stat0(path, *args, **kwargs)
+        def open_guard(path, *args, **kwargs):
+            if str(path) in forbidden: raise AssertionError('open local config')
+            return open0(path, *args, **kwargs)
+        with mock.patch('os.stat', side_effect=stat_guard), mock.patch('os.open', side_effect=open_guard):
+            snap = capture_snapshot(self.root)
+        self.assertFalse(set(names) & set(snap['paths']))
+        self.assertIn(normal.relative_to(self.root).as_posix(), snap['paths'])
+        self.assertEqual(snap['coverage']['status'], 'complete')
+        self.assertIn('credential-name-policy-v3', snap['coverage']['standardExclusions'])
+        self.assertIn('credential-name-exclusions', snap['coverage']['uninspected'])
+        reader = ReadBoundary(self.root)
+        for name in names:
+            with self.assertRaises(BoundaryError): reader.read_bytes(name)
+
+    def test_local_configuration_links_cannot_be_aliased(self):
+        self.policy.update(mode='complete', allow=['**'], deny=[], scopeDescription='合成完整范围')
+        self.write_policy()
+        target = self.root / 'sample_app_account.local.json'
+        target.write_text('synthetic-sensitive-config')
+        alias = self.root / 'ordinary.json'
+        alias.symlink_to(target)
+        with self.assertRaises(BoundaryError): capture_snapshot(self.root)
+        alias.unlink()
+        os.link(target, alias)
+        with self.assertRaises(BoundaryError): capture_snapshot(self.root)
+        alias.unlink()
+        target.unlink()
+        target.symlink_to(self.root / 'Restricted/private.swift')
+        self.assertNotIn(target.name, capture_snapshot(self.root)['paths'])
+
+    def test_policy_v2_report_cannot_be_reused_for_v3(self):
+        self.start()
+        report = verify_configuration(self.root, 'scope')
+        report['binding']['readCoverage']['credentialExclusionPolicy'] = 'name-policy-v2; excluded paths are not inspected; unnamed secrets are not detectable'
+        with self.assertRaises(ValueError): validate_report(self.root, report, 'scope', 'D0', allow_partial=True)
+
+    def test_link_escape_and_hardlink_are_blocked_even_in_complete_mode(self):
+        self.policy.update(mode='complete', allow=['**'], deny=[], scopeDescription='合成完整范围')
+        self.write_policy()
+        target = self.root / 'Restricted/private.swift'
+        alias = self.root / 'ordinary.json'
+        alias.symlink_to(target)
+        with self.assertRaises(BoundaryError): capture_snapshot(self.root)
+        alias.unlink()
+        os.link(target, alias)
+        with self.assertRaises(BoundaryError): capture_snapshot(self.root)
+
+    def test_old_coverage_cannot_validate_after_exclusion_policy_change(self):
+        self.start()
+        report = verify_configuration(self.root, 'scope')
+        report['coverage'].pop('credentialExclusionPolicy')
+        with self.assertRaises(ValueError): validate_report(self.root, report, 'scope', 'D0', allow_partial=True)
 
     def test_partial_installer_only_adds_allowed_control_files(self):
         """真实安装流程仅写必要配置；业务样本摘要保持不变，索引明确部分范围。"""

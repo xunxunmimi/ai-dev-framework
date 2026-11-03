@@ -181,6 +181,8 @@ def main() -> int:
         report = {
             "schemaVersion": "2.5",
             "binding": before_binding,
+            "coverage": before_binding["readCoverage"],
+            "limitations": ["excluded credentials are not bound; external commands are not sandboxed by ReadBoundary"],
             "configPath": str(args.config.resolve()),
             "configSha256": config_sha,
             "planSha256": plan_sha,

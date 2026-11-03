@@ -49,7 +49,7 @@
 
 ```bash
 python3 \
-  "${HOME}/Desktop/MyProject/migration-frameworks/ios-to-harmony-dual-model-migrator/scripts/start_migration.py" \
+  "<用户目录>/Desktop/MyProject/migration-frameworks/ios-to-harmony-dual-model-migrator/scripts/start_migration.py" \
   "/你的iOS源项目绝对路径" \
   "/你的HarmonyOS目标项目绝对路径"
 ```
@@ -58,7 +58,7 @@ python3 \
 
 ```bash
 python3 \
-  "${HOME}/Desktop/MyProject/migration-frameworks/ios-to-harmony-migrator/scripts/start_migration.py" \
+  "<用户目录>/Desktop/MyProject/migration-frameworks/ios-to-harmony-migrator/scripts/start_migration.py" \
   "/你的iOS源项目绝对路径" \
   "/你的HarmonyOS目标项目绝对路径"
 ```
@@ -79,7 +79,7 @@ HarmonyOS目标项目/
 把 HarmonyOS 目标项目路径传给 AI Dev Kit：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/你的HarmonyOS目标项目绝对路径"
 ```
 
@@ -172,7 +172,7 @@ Codex 返回详细计划后，你应检查：
 已经迁移了一部分的项目也可以补装 AI Dev Kit：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/已有HarmonyOS迁移项目绝对路径"
 ```
 

@@ -1,7 +1,7 @@
 @Entry
 @Component
 struct Index {
-  @State private title: string = '格式转换'
+  @State private title: string = '示例功能'
 
   build() {
     Column() {

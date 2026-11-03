@@ -36,15 +36,15 @@ npx --version
 项目创建完成后运行：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/你的项目绝对路径"
 ```
 
 例如：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
-./setup-project.sh "${HOME}/Desktop/Projects/MyNewApp"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
+./setup-project.sh "<用户目录>/Desktop/Projects/MyNewApp"
 ```
 
 注意：`/你的项目绝对路径` 是占位符，必须替换为真实路径。
@@ -60,7 +60,7 @@ Project type: ordinary
 可以直接把现有项目的根目录传给脚本：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/已有项目绝对路径"
 ```
 
@@ -124,14 +124,14 @@ Antigravity 2.0 自带 `/grill-me`。出现同名选择时可优先使用内置 
 只生成入口和规则，不下载技能：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/你的项目绝对路径" --rules-only
 ```
 
 安装技能，但跳过 Ponytail 原生插件：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/你的项目绝对路径" --no-plugins
 ```
 

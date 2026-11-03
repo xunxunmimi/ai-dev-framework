@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "baseVersion": "2.6.5",
+  "candidateVersion": "2.6.5-import-review",
+  "sourceManifestSha256": "74d8eb2dd733e24da130bd761eb13e58333305e1e15f1cc7931fb4ce64a31a62",
+  "previousDocumentationNormalizedCandidateSha256": "16690d62ce0f275831279ae33ba2aaee646d7f76b647d2a36c5659d8192c8bc3",
+  "candidateActiveSuiteSha256": "273939514c91888127327f990a3fdcf2ba9292ff11901b09d4303197f9056a62",
+  "meaning": "privacy-normalized review candidate; distinct from original release; no project migration",
+  "modifiedFileDigests": {
+    "VERSION": {
+      "beforeSha256": "0842905a7965d3d4ad48ee568cec24ff08e12eed431b3f083876041b10cbd83e",
+      "afterSha256": "f9e78a94edc55e7f7cb1e7b508f7af8c3f4b0d0c3066ec1819585ec6b1da0fc8"
+    },
+    "shared/context-engineering/read-boundary.md": {
+      "beforeSha256": "429364b405b96524e352ff2116c7cb6f2b573d823ae71a42a1b3e0466f285b5e",
+      "afterSha256": "22d434d7cd66e13c2cdb1286fb7c538fdf2ce400aab4cc8aad1f49fd1cb18014"
+    },
+    "docs/2.6.3-本机配置排除.md": {
+      "beforeSha256": "2c1e6a5089bd79aecc07b68331025f0b169310d405559ed388153aab11d1e8df",
+      "afterSha256": "24d438951b5e1a4f4e51ab422ca960633f7a58cbe16ac506582294ee7aafbb10"
+    },
+    "shared/task-routing/read_boundary_self_test.py": {
+      "beforeSha256": "e69e3c2217ea1578f28737d8a7a540edb0b1e613bfb8211fcbd4e510d4976337",
+      "afterSha256": "10eb2280d08e84de094504df4d5b191523ffaec4cdbd2ffacf7a7bccdb0bb69d"
+    },
+    "evals/cases/real.json": {
+      "beforeSha256": "4cbb9271f67b87ad1d87e852f6e28e80947af7395451b15e160fde084238f47b",
+      "afterSha256": "da80c21b429d6d8ef0117361fd84fe8e5cbfc2a975eb5f172b77956a2f3dff38"
+    },
+    "evals/fixtures/migration/harmony-target/entry/src/main/ets/pages/Index.ets": {
+      "beforeSha256": "55a1d43e36a284f5c9020195932312ed70e999a766783c745430461460dc67d6",
+      "afterSha256": "561e6901521aa1d73d87326ea7d0d5f390fcebe958aabc606cbf92a6ce99e57b"
+    }
+  },
+  "fixturePathNormalization": "one synthetic project path renamed; original mapping retained locally",
+  "releaseStatus": "not released",
+  "evaluationNormalization": {
+    "caseCount": 24,
+    "caseIdsChanged": 3,
+    "environmentRolesRenamed": 3,
+    "promptAndScenarioTextGeneralized": true,
+    "historicalEvaluationContractsComparable": false,
+    "syntheticFixtureTitleGeneralized": true
+  }
+}

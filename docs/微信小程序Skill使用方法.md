@@ -17,7 +17,7 @@
 Skill 源目录：
 
 ```text
-${HOME}/Desktop/MyProject/wechat-mini-program-builder/
+<用户目录>/Desktop/MyProject/wechat-mini-program-builder/
 ```
 
 ## 2. 项目级隔离
@@ -114,15 +114,15 @@ ${HOME}/Desktop/MyProject/wechat-mini-program-builder/
 ### 第二步：安装项目级 skill
 
 ```bash
-cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
+cd "<用户目录>/Desktop/MyProject/wechat-mini-program-builder"
 ./setup-project.sh "/你的微信小程序项目绝对路径"
 ```
 
 示例：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
-./setup-project.sh "${HOME}/Desktop/Projects/TaskMiniProgram"
+cd "<用户目录>/Desktop/MyProject/wechat-mini-program-builder"
+./setup-project.sh "<用户目录>/Desktop/Projects/TaskMiniProgram"
 ```
 
 安装成功后应该显示：
@@ -138,7 +138,7 @@ WeChat Mini Program Builder is active only in this project.
 把包含 `project.config.json`、`package.json` 或小程序源码的项目根目录传给安装脚本：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
+cd "<用户目录>/Desktop/MyProject/wechat-mini-program-builder"
 ./setup-project.sh "/已有微信小程序项目绝对路径"
 ```
 
@@ -159,7 +159,7 @@ cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
 安装完成后：
 
 1. 把 Codex 或 Antigravity 工作区打开到目标小程序项目。
-2. 不要打开 `${HOME}/Desktop/MyProject/` 多项目集合目录。
+2. 不要打开 `<用户目录>/Desktop/MyProject/` 多项目集合目录。
 3. 新建对话并明确调用 `$wechat-mini-program-builder`。
 
 新功能示例：
@@ -451,10 +451,10 @@ wechat-mini-program-builder
 安装示例：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
+cd "<用户目录>/Desktop/MyProject/vibe-playbook-v2"
 ./setup-project.sh "/你的微信小程序项目绝对路径"
 
-cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
+cd "<用户目录>/Desktop/MyProject/wechat-mini-program-builder"
 ./setup-project.sh "/你的微信小程序项目绝对路径"
 ```
 
@@ -491,7 +491,7 @@ AI Dev Kit：通用工程纪律（可选）
 工具源更新后，对需要更新的小程序项目重新运行：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/wechat-mini-program-builder"
+cd "<用户目录>/Desktop/MyProject/wechat-mini-program-builder"
 ./setup-project.sh "/你的微信小程序项目绝对路径"
 ```
 
@@ -541,5 +541,5 @@ Skill 明确禁止把 AppSecret 或生产密钥写入客户端或报告。项目
 更完整的源说明见：
 
 ```text
-${HOME}/Desktop/MyProject/wechat-mini-program-builder/README.md
+<用户目录>/Desktop/MyProject/wechat-mini-program-builder/README.md
 ```

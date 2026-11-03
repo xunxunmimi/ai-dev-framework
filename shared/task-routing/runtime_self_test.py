@@ -227,6 +227,14 @@ class RuntimeScenarios(unittest.TestCase):
         path = task_dir(self.root, "verify") / "compile.json"
         report = run_verification(self.root, "verify", "D2", "compiled", command, path)
         validate_report(self.root, report, "verify", "D2")
+        incomplete = dict(report)
+        incomplete.pop("limitations")
+        with self.assertRaises(ValueError):
+            validate_report(self.root, incomplete, "verify", "D2")
+        incomplete = dict(report)
+        incomplete["coverage"] = {**report["coverage"], "uninspected": []}
+        with self.assertRaises(ValueError):
+            validate_report(self.root, incomplete, "verify", "D2")
         with self.assertRaises((ValueError, FileNotFoundError)):
             validate_report(self.root, report, "wrong", "D2")
         with self.assertRaises(ValueError):

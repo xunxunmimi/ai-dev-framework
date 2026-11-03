@@ -16,7 +16,7 @@ from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
 
-from read_boundary import ReadBoundary, BoundaryError, SNAPSHOT_EXCLUDES, require_complete, task_read_scope, bootstrap_bytes, secure_fd
+from read_boundary import ReadBoundary, BoundaryError, SNAPSHOT_EXCLUDES, require_complete, task_read_scope, bootstrap_bytes, secure_fd, protected_name, task_only_current, task_only_scope, external_control_bytes
 
 # 仅跳过生成缓存和任务自身状态；业务源码、规则和第三方目录仍参与差异检查。
 IGNORED_DIRS = {".git", ".ai-project", ".migration-workspace-v2", "DerivedData", "build", "node_modules", "__pycache__", ".aws", ".ssh", ".gnupg"}
@@ -36,6 +36,9 @@ def task_scoped(function):
         if task is None:
             task = kwargs.pop('task_id', None) if 'task_id' in kwargs else kwargs.pop('state', None)
         task_id = task['taskId'] if isinstance(task, dict) else task
+        only = task_only_current(root)
+        if only and task_id != only[1]:
+            raise BoundaryError('任务专用范围不能用于其他任务')
         with task_read_scope(root, task_id, kwargs.get('read_policy')):
             return function(root, task, *args, **kwargs)
     return scoped
@@ -152,7 +155,7 @@ def file_hash(path: Path, root: Path | None = None) -> str:
 
 def secret(path: Path) -> bool:
     """识别不应读取或编辑的凭据文件名；这是保守筛选，不保证发现所有秘密。"""
-    return path.name == ".env" or path.name.startswith(".env.") or path.suffix.lower() in SECRET_SUFFIXES
+    return protected_name(path.as_posix())
 
 
 def capture_snapshot(root: Path) -> dict:
@@ -179,6 +182,26 @@ def tree_snapshot(root: Path) -> dict:
 
 def task_state_paths(root: Path) -> list[Path]:
     """只在获准的任务状态子树枚举；链接与未知路径在读取前拒绝。"""
+    if task_only_current(root):
+        boundary = ReadBoundary(root)
+        try:
+            fd = secure_fd(root, '.ai-project/tasks', directory=True)
+        except FileNotFoundError:
+            return []
+        try:
+            with os.scandir(fd) as entries:
+                names = sorted(entry.name for entry in entries)
+            result = []
+            for name in names:
+                if name.startswith('.init-'):
+                    continue
+                if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', name):
+                    raise BoundaryError('任务元数据存在无法确认的条目')
+                relative = f'.ai-project/tasks/{name}/state.json'
+                if boundary.exists(relative): result.append(root / relative)
+            return result
+        finally:
+            os.close(fd)
     return [root / name for name in ReadBoundary(root).files(subtree=".ai-project/tasks")
             if len(Path(name).parts) == 4 and name.endswith("/state.json")]
 
@@ -202,7 +225,7 @@ def observe_identity(root: Path, platform: str, selection: dict | None = None) -
     if platform not in {"ios", "harmonyos"} or detected not in {platform, "mixed"}:
         raise ValueError(f"平台冲突或未识别: requested={platform}, detected={detected}")
     # 不保存远程 URL；仓库公共目录和根路径共同区分项目与 worktree。
-    observe_git = boundary.project_policy.get('identityGitMode') != 'unverified'
+    observe_git = boundary.policy['mode'] == 'complete' and boundary.project_policy.get('identityGitMode') != 'unverified'
     top = git(root, "rev-parse", "--show-toplevel") if observe_git else ''
     common = git(root, "rev-parse", "--git-common-dir") if observe_git else ''
     branch = (git(root, "symbolic-ref", "--short", "HEAD") or ("detached:" + git(root, "rev-parse", "HEAD") if top else "not-applicable")) if observe_git else 'unverified-read-scope'
@@ -271,7 +294,20 @@ def confirmed_identity(root: Path, validated_rules: dict | None = None) -> dict:
     """读取身份基线并重探测；根、仓库、分支、平台或配置变化均暂停，等待明确重新确认。"""
     if validated_rules is None:
         rules_identity(root)
-    expected = read_json(root / ".ai-project/identity.json")
+    only = task_only_current(root)
+    if only:
+        boundary = ReadBoundary(root)
+        spec = boundary.task_policy
+        state_name = f'.ai-project/tasks/{only[1]}/state.json'
+        if boundary.exists(state_name):
+            expected = boundary.read_json(state_name)['identity']
+        else:
+            current = observe_identity(root, spec['platform'], spec['identitySelection'])
+            if any(field['status'] == 'needs-confirmation' for field in current['fields'].values()):
+                raise ValueError('单任务身份未明确确认')
+            return current
+    else:
+        expected = read_json(root / ".ai-project/identity.json")
     selection = {name: field["value"] for name, field in expected["fields"].items() if field["status"] == "confirmed"}
     current = observe_identity(root, expected["platform"], selection)
     if current != expected or any(field["status"] == "needs-confirmation" for field in current["fields"].values()):
@@ -306,6 +342,9 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
     identity = confirmed_identity(root)
     directory = task_dir(root, task_id)
     files = sorted(set(files))
+    only = task_only_current(root)
+    if only and files != sorted(ReadBoundary(root).task_policy['editableFiles']):
+        raise ValueError('任务编辑文件与用户确认的精确范围不一致')
     if not files:
         raise ValueError("持久任务必须声明 --file 编辑范围；范围未知时先只读调查")
     policy_path = root / ".ai-project/protected-paths.json"
@@ -313,8 +352,10 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
     project_protected = read_json(policy_path).get("patterns", []) if boundary.exists(".ai-project/protected-paths.json") else []
     blocked = list(PROTECTED) + project_protected + list(protected or [])
     for name in files:
-        safe_path(root, name)
         boundary.require(name)
+        # 授权后先以 O_NOFOLLOW 检查，再解析；避免链接别名导致私密目标被探测。
+        boundary.exists(name)
+        safe_path(root, name)
         if match(name, blocked) or secret(Path(name)):
             raise ValueError(f"禁止编辑第三方或凭据: {name}")
     with project_lock(root, ".ai-project/tasks.lock"):
@@ -344,12 +385,14 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
         dirty_names = project_relative_paths(root, dirty_names)
         if set(files).intersection(dirty_names):
             raise ValueError("允许编辑文件已有用户修改；请先人工确认边界，不能把整文件归入新任务")
-        state = {"schemaVersion": "1.0", "taskId": task_id, "owner": owner, "identity": identity, "baseRevision": git(root, "rev-parse", "HEAD") or "not-applicable", "request": request, "allowedFiles": files, "protectedGlobs": blocked, "baseline": baseline, "readCoverage": captured["coverage"], "checkpoint": baseline, "baselineDirtyStatus": dirty_names, "status": "active", "completed": [], "todo": [], "blockers": [], "nextAction": "实现声明的最小任务范围", "completion": {name: "waiting-user" if name == "realDevice" else "not-run" for name in DIMENSIONS}, "updatedAt": now()}
+        state = {"schemaVersion": "1.0", "taskId": task_id, "owner": owner, "identity": identity, "baseRevision": (git(root, "rev-parse", "HEAD") or "not-applicable") if boundary.policy["mode"] == "complete" else "unverified-read-scope", "request": request, "allowedFiles": files, "protectedGlobs": blocked, "baseline": baseline, "readCoverage": captured["coverage"], "checkpoint": baseline, "baselineDirtyStatus": dirty_names, "baselineDirtyStatusVerified": boundary.policy["mode"] == "complete", "status": "active", "completed": [], "todo": [], "blockers": [], "nextAction": "实现声明的最小任务范围", "completion": {name: "waiting-user" if name == "realDevice" else "not-run" for name in DIMENSIONS}, "updatedAt": now()}
         # 先完整生成未发布目录，再原子发布；断线不会留下“有 baseline 无 state”的任务。
         directory.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=".init-", dir=directory.parent))
         try:
-            if read_policy is not None:
+            if only:
+                atomic_json(staging / 'task-only.json', ReadBoundary(root).task_policy)
+            elif read_policy is not None:
                 atomic_json(staging / 'read-policy.json', read_policy)
             atomic_json(staging / "baseline.json", {"taskId": task_id, "identity": identity, "paths": baseline, "coverage": captured["coverage"]})
             atomic_json(staging / "state.json", state)
@@ -475,7 +518,8 @@ def resume(root: Path, task_id: str) -> dict:
     # 统一 Mac 目录别名，避免把本任务误认成另一个任务或项目。
     root = root.resolve()
     state = read_json(task_dir(root, task_id) / "state.json")
-    if confirmed_identity(root) != state["identity"] or (git(root, "rev-parse", "HEAD") or "not-applicable") != state["baseRevision"]:
+    revision = (git(root, "rev-parse", "HEAD") or "not-applicable") if ReadBoundary(root).policy["mode"] == "complete" else "unverified-read-scope"
+    if confirmed_identity(root) != state["identity"] or revision != state["baseRevision"]:
         raise ValueError("恢复身份或 Git revision 不符，需人工重新核对任务")
     current = check_scope(root, state)["current"]
     stale = [name for name in state["allowedFiles"] if current.get(name) != state["checkpoint"].get(name)]
@@ -539,7 +583,7 @@ def binding(root: Path, task_id: str, profile: str, slice_id: str | None = None)
     if identity != state["identity"]:
         raise ValueError("任务与当前项目身份不一致")
     files = check_scope(root, state)["current"]
-    return {"taskId": task_id, "sliceId": slice_id, "projectRoot": str(root.resolve()), "identitySha256": digest(identity), "revision": git(root, "rev-parse", "HEAD") or "not-applicable", "codeSha256": digest(files), "profile": profile, "rulesIdentity": rules, "readCoverage": ReadBoundary(root).coverage(), "verificationContractSha256": digest(read_json(root / ".ai-project/verification-commands.json")) if ReadBoundary(root).exists(".ai-project/verification-commands.json") else None}
+    return {"taskId": task_id, "sliceId": slice_id, "projectRoot": str(root.resolve()), "identitySha256": digest(identity), "revision": (git(root, "rev-parse", "HEAD") or "not-applicable") if ReadBoundary(root).policy["mode"] == "complete" else "unverified-read-scope", "codeSha256": digest(files), "profile": profile, "rulesIdentity": rules, "readCoverage": ReadBoundary(root).coverage(), "verificationContractSha256": digest(read_json(root / ".ai-project/verification-commands.json")) if not task_only_current(root) and ReadBoundary(root).exists(".ai-project/verification-commands.json") else None}
 
 
 def validate_report(root: Path, report: dict, task_id: str, profile: str, slice_id: str | None = None, allow_partial: bool = False) -> None:
@@ -557,6 +601,8 @@ def validate_report(root: Path, report: dict, task_id: str, profile: str, slice_
         if profile != "D0" or report.get("coverage") != current["readCoverage"] or report.get("executionStatus") != "passed" or report.get("checks") != expected_checks:
             raise ValueError("配置报告范围、等级或检查内容不完整")
         return
+    if report.get("coverage") != current["readCoverage"] or report.get("limitations") != ["excluded credentials are not bound; external commands are not sandboxed by ReadBoundary"]:
+        raise ValueError("构建或测试报告缺失凭据排除与子进程范围限制")
     commands = report.get("commands", [])
     if not commands or any(not item.get("argv") or item.get("exitCode") != 0 for item in commands):
         raise ValueError("通过报告必须包含实际执行命令及成功退出状态")
@@ -590,6 +636,8 @@ def run_verification(root: Path, task_id: str, profile: str, kind: str, argv: li
     root = root.resolve()
     if not argv or kind not in {"compiled", "automatedTests"}:
         raise ValueError("验证仅支持编译或自动测试命令")
+    if task_only_current(root):
+        raise BoundaryError('任务专用部分范围不执行外部构建或测试')
     if not report_path.resolve().is_relative_to(task_dir(root, task_id).resolve()):
         raise ValueError("验证报告只能写到本任务目录，不能覆盖业务/依赖文件")
     require_complete(root)  # 子进程无法由本工具强制遵守部分白名单，必须在执行前拒绝。
@@ -620,7 +668,7 @@ def run_verification(root: Path, task_id: str, profile: str, kind: str, argv: li
             failure = str(error)
         # 构建若修改源码，不能用执行前输入的结果声明当前代码通过。
         status = "blocked" if failure else "passed" if exit_code == 0 and before == after else "failed"
-        report = {"schemaVersion": "1.0", "binding": before, "startedAt": started, "finishedAt": now(), "status": status, "reason": failure, "kind": kind, "commands": [{"argv": argv, "cwd": str(root), "exitCode": exit_code}], "outputSha256": output_digest, "coverage": before["readCoverage"]}
+        report = {"schemaVersion": "1.0", "binding": before, "startedAt": started, "finishedAt": now(), "status": status, "reason": failure, "kind": kind, "commands": [{"argv": argv, "cwd": str(root), "exitCode": exit_code}], "outputSha256": output_digest, "coverage": before["readCoverage"], "limitations": ["excluded credentials are not bound; external commands are not sandboxed by ReadBoundary"]}
         atomic_json(task_dir(root, task_id) / "verification-history" / (started.replace(":", "-") + ".json"), report)
         atomic_json(report_path, report)
         with project_lock(root, ".ai-project/tasks.lock"):
@@ -672,6 +720,8 @@ def main() -> int:
     parser.add_argument("command", choices=("identity", "init", "resume", "check", "checkpoint", "verify", "verify-config", "ack-metadata"))
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--task-id")
+    parser.add_argument("--task-only", action="store_true", help="使用已发布的任务专用引导范围")
+    parser.add_argument("--task-only-spec", type=Path, help="仅 init：用户授权的任务专用引导 JSON")
     parser.add_argument('--task-read-policy', type=Path, help='仅 init 使用的任务级范围文件，不能写入共享项目策略')
     parser.add_argument("--platform", choices=("ios", "harmonyos"))
     parser.add_argument("--write", action="store_true")
@@ -699,34 +749,43 @@ def main() -> int:
     args = parser.parse_args()
     root = args.project.expanduser().resolve()
     try:
-        if args.command == "identity":
-            selection = {"bundleId": args.bundle_id, "scheme": args.scheme, "product": args.product, "module": args.module, "buildMode": args.build_mode}
-            result = observe_identity(root, args.platform, selection)
-            if args.write:
-                if any(field["status"] == "needs-confirmation" for field in result["fields"].values()):
-                    raise ValueError("身份存在未知项，请明确确认字段，不允许写成成功")
-                with project_lock(root, ".ai-project/tasks.lock"):
-                    atomic_json(root / ".ai-project/identity.json", result)
-        elif args.command == "init":
-            policy = json.loads(bootstrap_bytes(args.task_read_policy.parent.resolve(), args.task_read_policy.name)) if args.task_read_policy else None
-            result = begin(root, args.task_id, args.file, args.request, args.owner, args.protect, read_policy=policy)
-        elif args.command == "resume":
-            result = resume(root, args.task_id)
-        elif args.command == "check":
-            result = check_scope(root, read_json(task_dir(root, args.task_id) / "state.json"))
-            result.pop("current")
-        elif args.command == "checkpoint":
-            result = checkpoint(root, args.task_id, args.completed, args.todo, args.blocker, args.next, args.status)
-        elif args.command == 'ack-metadata':
-            if len(args.file) != 1:
-                raise ValueError('必须指定且只指定一个 --file')
-            result = acknowledge_metadata(root, args.task_id, args.file[0], args.old_sha256, args.new_sha256, args.reason, args.apply, args.preview_sha256, args.confirmed_by, args.authorization_source)
-        elif args.command == "verify-config":
-            result = verify_configuration(root, args.task_id, args.profile)
-        else:
-            result = run_verification(root, args.task_id, args.profile, args.kind, args.argv, args.report or task_dir(root, args.task_id) / f"{args.kind}.json")
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 3 if result.get("status") == "partial" else 1 if result.get("status") in {"failed", "blocked"} else 0
+        if args.task_only_spec and (args.command != 'init' or not args.task_only or not args.task_id or args.task_read_policy):
+            raise ValueError('任务专用引导文件仅供 task-only init 使用')
+        if args.task_only and (not args.task_id or args.command == 'identity'):
+            raise ValueError('task-only 必须显式指定任务，不能写共享身份')
+        if args.task_only and args.command == 'init' and not args.task_only_spec:
+            raise ValueError('task-only init 必须提供明确授权文件')
+        spec = json.loads(external_control_bytes(args.task_only_spec, root)) if args.task_only_spec else None
+        manager = task_only_scope(root, args.task_id, spec) if args.task_only else contextlib.nullcontext()
+        with manager:
+            if args.command == "identity":
+                selection = {"bundleId": args.bundle_id, "scheme": args.scheme, "product": args.product, "module": args.module, "buildMode": args.build_mode}
+                result = observe_identity(root, args.platform, selection)
+                if args.write:
+                    if any(field["status"] == "needs-confirmation" for field in result["fields"].values()):
+                        raise ValueError("身份存在未知项，请明确确认字段，不允许写成成功")
+                    with project_lock(root, ".ai-project/tasks.lock"):
+                        atomic_json(root / ".ai-project/identity.json", result)
+            elif args.command == "init":
+                policy = json.loads(bootstrap_bytes(args.task_read_policy.parent.resolve(), args.task_read_policy.name)) if args.task_read_policy else None
+                result = begin(root, args.task_id, args.file, args.request, args.owner, args.protect, read_policy=policy)
+            elif args.command == "resume":
+                result = resume(root, args.task_id)
+            elif args.command == "check":
+                result = check_scope(root, read_json(task_dir(root, args.task_id) / "state.json"))
+                result.pop("current")
+            elif args.command == "checkpoint":
+                result = checkpoint(root, args.task_id, args.completed, args.todo, args.blocker, args.next, args.status)
+            elif args.command == 'ack-metadata':
+                if len(args.file) != 1:
+                    raise ValueError('必须指定且只指定一个 --file')
+                result = acknowledge_metadata(root, args.task_id, args.file[0], args.old_sha256, args.new_sha256, args.reason, args.apply, args.preview_sha256, args.confirmed_by, args.authorization_source)
+            elif args.command == "verify-config":
+                result = verify_configuration(root, args.task_id, args.profile)
+            else:
+                result = run_verification(root, args.task_id, args.profile, args.kind, args.argv, args.report or task_dir(root, args.task_id) / f"{args.kind}.json")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 3 if result.get("status") == "partial" else 1 if result.get("status") in {"failed", "blocked"} else 0
     except (ValueError, OSError, TypeError, KeyError, subprocess.TimeoutExpired) as error:
         coverage = {"status": "blocked", "reason": str(error)}
         try:

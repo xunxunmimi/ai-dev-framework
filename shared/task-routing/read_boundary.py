@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 POLICY_PATH = '.ai-project/read-policy.json'
 # 单次调用/线程的任务范围，不自动选取“最近任务”，关闭后不会变成共享项目约束。
 _TASK_SCOPE = ContextVar('framework_task_read_scope', default=None)
+_TASK_ONLY = ContextVar('framework_task_only_scope', default=None)
 
 
 @contextmanager
@@ -31,6 +32,53 @@ def task_read_scope(root: Path, task_id: str, policy: dict | None = None):
         yield
     finally:
         _TASK_SCOPE.reset(token)
+
+
+@contextmanager
+def task_only_scope(root: Path, task_id: str, spec: dict | None = None):
+    """显式单任务引导；仅可在没有长期项目策略时使用，不创建共享授权。"""
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', task_id):
+        raise BoundaryError('无效任务 ID')
+    token = _TASK_ONLY.set((root.resolve(), task_id, spec))
+    try:
+        yield
+    finally:
+        _TASK_ONLY.reset(token)
+
+
+def task_only_current(root: Path):
+    active = _TASK_ONLY.get()
+    return active if active and active[0] == root.resolve() else None
+
+
+def validate_task_only(root: Path, task_id: str, spec: dict) -> dict:
+    """只接受明确精确文件及身份输入，不接收目录通配或无来源的授权。"""
+    allowed_keys = {'schemaVersion', 'scopeKind', 'confirmed', 'taskId', 'projectRoot', 'authorizationSource', 'scopeDescription', 'allowFiles', 'identityFiles', 'editableFiles', 'denyDirectories', 'platform', 'identitySelection'}
+    if not isinstance(spec, dict) or set(spec) != allowed_keys or spec.get('schemaVersion') != '1.0' or spec.get('scopeKind') != 'task-only' or spec.get('confirmed') is not True or spec.get('projectRoot') != str(root) or spec.get('taskId') != task_id:
+        raise BoundaryError('单任务引导根、任务或授权无效')
+    if not all(isinstance(spec.get(k), str) and spec[k].strip() for k in ('authorizationSource', 'scopeDescription')):
+        raise BoundaryError('单任务引导缺少授权来源或范围说明')
+    files = spec.get('allowFiles'); identity = spec.get('identityFiles'); editable = spec.get('editableFiles')
+    for group in (files, identity, editable):
+        if not isinstance(group, list) or not group or len(set(group)) != len(group):
+            raise BoundaryError('单任务文件列表必须非空且无重复')
+        for name in group:
+            if canonical_relative(name) != name or any(ch in name for ch in '*?[') or name.startswith('.ai-project/') or protected_name(name):
+                raise BoundaryError('单任务只允许明确的非私密普通文件')
+    if not set(identity).issubset(files) or not set(editable).issubset(files):
+        raise BoundaryError('身份和编辑文件必须属于授权文件范围')
+    denied = spec.get('denyDirectories')
+    if not isinstance(denied, list) or len(set(denied)) != len(denied):
+        raise BoundaryError('排除目录必须是无重复的精确路径列表')
+    for directory in denied:
+        if canonical_relative(directory) != directory or any(ch in directory for ch in '*?[') or directory == '.ai-project' or directory.startswith('.ai-project/'):
+            raise BoundaryError('排除目录必须是非控制目录的规范精确路径')
+        if any(name == directory or name.startswith(directory + '/') for name in files):
+            raise BoundaryError('授权文件与明确排除目录冲突')
+    selection = spec.get('identitySelection')
+    if spec.get('platform') not in {'ios', 'harmonyos'} or not isinstance(selection, dict) or set(selection) - {'bundleId', 'scheme', 'product', 'module', 'buildMode'} or any(not isinstance(v, str) or len(v) > 256 for v in selection.values()):
+        raise BoundaryError('单任务身份参数无效')
+    return spec
 
 
 def intersect_allow(left: list[str], right: list[str]) -> list[str]:
@@ -72,17 +120,36 @@ def canonical_relative(value: str) -> str:
 
 
 def protected_name(value: str) -> bool:
-    """判断路径是否属于私密目录或凭据名；仅检查名字，不打开内容。"""
-    path = PurePosixPath(value)
-    return bool(set(path.parts) & PRIVATE_DIRS) or path.name == '.env' or path.name.startswith('.env.') or path.suffix.lower() in SECRET_SUFFIXES
+    """仅按路径名保守拒绝常见凭据；不打开、不摘要，也不保证发现所有秘密。"""
+    path = PurePosixPath(unicodedata.normalize('NFC', value).casefold())
+    name = path.name
+    private_dirs = {part.casefold() for part in PRIVATE_DIRS} | {'credentials', 'credential', 'secrets', '.codex', '.claude', '.config'}
+    credential_stems = r'(?:credentials?|secrets?|client[_-]secret|api[_-]key|private[_-]key|access[_-]token|refresh[_-]token|token)'
+    return (bool(set(path.parts) & private_dirs) or any(part.endswith('.local') or '.local.' in part for part in path.parts) or name == '.env' or name.startswith('.env.')
+            or path.suffix in SECRET_SUFFIXES | {'.p8', '.pfx', '.jks', '.keystore'}
+            or bool(re.fullmatch(credential_stems + r'(?:[._-][a-z0-9][a-z0-9_-]*)*', name))
+            or name in {'googleservice-info.plist', 'id_rsa', 'id_ed25519', '.netrc', '.npmrc'})
 
 
 def external_protected_name(value: str) -> bool:
-    """外部授权额外拒绝常见凭据名；不得依靠扩展名隐藏凭据。"""
-    folded = value.casefold()
-    name = PurePosixPath(folded).name
-    private_parts = set(PurePosixPath(folded).parts)
-    return bool(private_parts & {'.codex', '.claude', '.config'}) or protected_name(folded) or PurePosixPath(folded).suffix in {'.p8', '.pfx', '.jks', '.keystore'} or name in {'credentials', 'credentials.json', 'secrets.json', 'client_secret.json', 'token.json', 'googleservice-info.plist', 'id_rsa', 'id_ed25519', '.netrc', '.npmrc'}
+    """项目读取和临时外部许可共用同一套凭据拒绝规则。"""
+    return protected_name(value)
+
+
+def external_control_bytes(path: Path, project: Path) -> bytes:
+    """只打开项目外的明确控制 JSON；逐级拒绝链接和硬链接。"""
+    if not path.is_absolute() or '..' in path.parts or path.is_relative_to(project):
+        raise BoundaryError('控制文件必须位于项目外的规范绝对路径')
+    cursor = Path(path.anchor)
+    for index, part in enumerate(path.parts[1:]):
+        cursor = cursor / part
+        observed = os.lstat(cursor)
+        if stat.S_ISLNK(observed.st_mode):
+            raise BoundaryError('控制文件路径不能包含链接')
+        leaf = index == len(path.parts) - 2
+        if (leaf and (not stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1)) or (not leaf and not stat.S_ISDIR(observed.st_mode)):
+            raise BoundaryError('控制文件必须是无硬链接普通文件')
+    return bootstrap_bytes(path.parent, path.name)
 
 
 def policy_digest(value: dict) -> str:
@@ -296,6 +363,44 @@ class ReadBoundary:
     def __init__(self, root: Path, policy: dict | None = None):
         """校验策略、根和白名单；仅固定 read-policy 可在策略建立前读取。"""
         self.root = root.resolve(strict=True)  # 根身份在策略中锁定，子路径从不 resolve 后跟随链接。
+        only = task_only_current(self.root)
+        if only is not None:
+            try:
+                fd = secure_fd(self.root, POLICY_PATH)
+            except FileNotFoundError:
+                pass
+            else:
+                os.close(fd)
+                raise BoundaryError('存在长期项目策略；单任务引导不能绕过，应使用既有任务范围')
+            task_id, supplied = only[1], only[2]
+            relative = f'.ai-project/tasks/{task_id}/task-only.json'
+            try:
+                stored = json.loads(bootstrap_bytes(self.root, relative))
+            except FileNotFoundError:
+                stored = None
+            try:
+                saved_state = json.loads(bootstrap_bytes(self.root, f'.ai-project/tasks/{task_id}/state.json'))
+            except FileNotFoundError:
+                saved_state = None
+            if saved_state is not None and stored is None:
+                raise BoundaryError('已发布任务的策略丢失；不能用新参数重建')
+            if supplied is not None and stored is not None and supplied != stored:
+                raise BoundaryError('单任务策略与已发布内容不一致')
+            spec = validate_task_only(self.root, task_id, supplied if supplied is not None else stored)
+            if saved_state is not None and (saved_state.get('taskId') != task_id or saved_state.get('readCoverage', {}).get('policySha256') != policy_digest(spec)):
+                raise BoundaryError('单任务策略与已发布基线不一致，禁止读取其声明文件')
+            if saved_state is not None and saved_state.get('status') in {'closed', 'cancelled'}:
+                raise BoundaryError('单任务已结束；授权不延续到后续任务')
+            self.policy = {'schemaVersion':'1.0','confirmed':True,'projectRoot':str(self.root),'scopeKind':'task', 'taskId':task_id,
+                           'mode':'partial','scopeDescription':spec['scopeDescription'], 'identityFiles':spec['identityFiles'], 'identityGitMode':'unverified',
+                           'allow': sorted(set(spec['allowFiles'] + [f'.ai-project/tasks/{task_id}/**', '.ai-project/tasks.lock', '.ai-project/framework-installation.json', '.ai-project/protected-paths.json'])),
+                           'deny': [name + '/**' for name in spec['denyDirectories']]}
+            self.allow = self._entries(self.policy['allow'])
+            self.deny = self._entries(self.policy['deny'], empty=True)
+            self.project_policy = dict(self.policy)
+            self.task_id, self.task_policy = task_id, spec
+            self.sha256 = policy_digest(spec)
+            return
         try:
             self.policy = policy if policy is not None else json.loads(bootstrap_bytes(self.root, POLICY_PATH))
         except (OSError, ValueError) as error:
@@ -395,7 +500,8 @@ class ReadBoundary:
     def allowed(self, relative: str) -> bool:
         """纯名字判断授权，必须早于 stat、遍历或打开内容。"""
         name = canonical_relative(relative)
-        return not protected_name(name) and self._matches(name, self.allow) and not self._matches(name, self.deny)
+        task_state = bool(task_only_current(self.root) and re.fullmatch(r'\.ai-project/tasks/[A-Za-z0-9][A-Za-z0-9_.-]{0,79}/state\.json', name))
+        return not protected_name(name) and (task_state or self._matches(name, self.allow)) and not self._matches(name, self.deny)
 
     def require(self, relative: str) -> str:
         """返回已授权的规范路径；未知、拒绝和越界在任何文件访问前抛错。"""
@@ -479,7 +585,12 @@ class ReadBoundary:
 
     def coverage(self) -> dict:
         """稳定描述授权完整性；部分范围永远不能因命令 exit 0 变成完整通过。"""
-        return {'status': self.policy['mode'], 'scopeKind': 'task' if self.task_policy else self.project_policy.get('scopeKind', 'legacy-project'), 'taskId': self.task_id, 'projectPolicySha256': policy_digest(self.project_policy), 'taskPolicySha256': policy_digest(self.task_policy) if self.task_policy else None, 'policySha256': self.sha256, 'scopeDescription': self.policy['scopeDescription'], 'allow': self.allow, 'deny': self.deny, 'uninspected': ['outside-allowlist', 'explicit-deny'] if self.policy['mode'] == 'partial' else [], 'standardExclusions': sorted(SNAPSHOT_EXCLUDES) + ['credentials', '.DS_Store'], 'definition': 'business-and-rules; excludes generated caches, private credentials and task state'}
+        result = {'status': self.policy['mode'], 'scopeKind': 'task' if self.task_policy else self.project_policy.get('scopeKind', 'legacy-project'), 'taskId': self.task_id, 'projectPolicySha256': policy_digest(self.project_policy), 'taskPolicySha256': policy_digest(self.task_policy) if self.task_policy else None, 'policySha256': self.sha256, 'scopeDescription': self.policy['scopeDescription'], 'allow': self.allow, 'deny': self.deny, 'uninspected': (['outside-allowlist', 'explicit-deny'] if self.policy['mode'] == 'partial' else []) + ['credential-name-exclusions', 'unnamed-secrets-not-detectable'], 'standardExclusions': sorted(SNAPSHOT_EXCLUDES) + ['credential-name-policy-v3', '.DS_Store'], 'credentialExclusionPolicy': 'name-policy-v3; excluded paths are not inspected; unnamed secrets are not detectable', 'definition': 'business-and-rules; excludes generated caches, private credentials and task state'}
+        if task_only_current(self.root):
+            result['projectPolicySha256'] = None
+            result['policySource'] = 'task-only-no-project-policy'
+            result['taskMetadataAccess'] = 'own task metadata and other task state files only'
+        return result
 
 
 def require_complete(root: Path) -> ReadBoundary:

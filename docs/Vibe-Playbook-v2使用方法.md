@@ -49,7 +49,7 @@ Vibe Playbook v2 不安装到全局目录，只复制到指定 App 项目：
 源工具目录：
 
 ```text
-${HOME}/Desktop/MyProject/vibe-playbook-v2/
+<用户目录>/Desktop/MyProject/vibe-playbook-v2/
 ```
 
 这个目录只是工具源，不会自动对所有项目生效。
@@ -100,22 +100,22 @@ ${HOME}/Desktop/MyProject/vibe-playbook-v2/
 
 ## 4. 安装到新项目
 
-首先为 App 准备一个独立项目目录。不要使用 `${HOME}/Desktop/MyProject/` 作为目标，因为这是多个框架和项目的集合目录。
+首先为 App 准备一个独立项目目录。不要使用 `<用户目录>/Desktop/MyProject/` 作为目标，因为这是多个框架和项目的集合目录。
 
 例如：
 
 ```bash
-mkdir -p "${HOME}/Desktop/Projects/HabitFlow"
+mkdir -p "<用户目录>/Desktop/Projects/HabitFlow"
 ```
 
 安装 Vibe Playbook v2：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
-./setup-project.sh "${HOME}/Desktop/Projects/HabitFlow"
+cd "<用户目录>/Desktop/MyProject/vibe-playbook-v2"
+./setup-project.sh "<用户目录>/Desktop/Projects/HabitFlow"
 ```
 
-其中 `${HOME}/Desktop/Projects/HabitFlow` 必须替换成你的真实 App 项目路径。
+其中 `<用户目录>/Desktop/Projects/HabitFlow` 必须替换成你的真实 App 项目路径。
 
 安装成功后会显示：
 
@@ -130,7 +130,7 @@ Vibe Playbook v2 的安装器只复制本地文件，不需要 Node.js、`npm` �
 把已有项目的根目录传给安装脚本：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
+cd "<用户目录>/Desktop/MyProject/vibe-playbook-v2"
 ./setup-project.sh "/你的已有App项目绝对路径"
 ```
 
@@ -149,7 +149,7 @@ cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
 安装完成后：
 
 1. 把 Codex 或 Antigravity 的工作区打开到目标 App 项目。
-2. 不要把工作区打开到 `${HOME}/Desktop/MyProject/` 多项目集合目录。
+2. 不要把工作区打开到 `<用户目录>/Desktop/MyProject/` 多项目集合目录。
 3. 新建对话，明确调用 `$vibe-playbook-v2`。
 
 完整的新项目提示词：
@@ -309,11 +309,11 @@ AI Dev Kit
 
 ```bash
 # 1. 安装 Vibe Playbook v2
-cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
+cd "<用户目录>/Desktop/MyProject/vibe-playbook-v2"
 ./setup-project.sh "/你的App项目绝对路径"
 
 # 2. 可选：安装 AI Dev Kit
-cd "${HOME}/Desktop/MyProject/ai-dev-kit"
+cd "<用户目录>/Desktop/MyProject/ai-dev-kit"
 ./setup-project.sh "/你的App项目绝对路径" --profile web
 ```
 
@@ -357,7 +357,7 @@ Vibe Playbook v2 不得绕过迁移计划批准、文件白名单、当前 owner
 工具源更新后，对需要更新的 App 项目重新运行安装命令：
 
 ```bash
-cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
+cd "<用户目录>/Desktop/MyProject/vibe-playbook-v2"
 ./setup-project.sh "/你的App项目绝对路径"
 ```
 
@@ -403,5 +403,5 @@ cd "${HOME}/Desktop/MyProject/vibe-playbook-v2"
 更完整的源说明见：
 
 ```text
-${HOME}/Desktop/MyProject/vibe-playbook-v2/README.md
+<用户目录>/Desktop/MyProject/vibe-playbook-v2/README.md
 ```
