@@ -27,6 +27,48 @@ PROTECTED = (".git/**", ".aws/**", ".ssh/**", ".gnupg/**", "Pods/**", "**/Pods/*
 # 完成维度互相独立；提交与推送不能由编译成功推导。
 DIMENSIONS = ("configuration", "codeModified", "compiled", "automatedTests", "realDevice", "submitted", "pushed")
 
+# 此候选仅承接已核实的 iOS 版本映射，不能由事务自声明新受管路径。
+IOS_TRUSTED_MAPPING = {
+    '.codex-rules/ios/WORKFLOW.md': 'frameworks/ios-daily-development-rules/templates/WORKFLOW.md',
+    '.codex-rules/ios/references/verification.md': 'frameworks/ios-daily-development-rules/references/verification.md',
+    '.codex-rules/ios/references/code-quality-ios.md': 'frameworks/ios-daily-development-rules/references/code-quality-ios.md',
+    '.codex-rules/_shared/task_router.py': 'shared/task-routing/task_router.py',
+    '.codex-rules/_shared/task_runtime.py': 'shared/task-routing/task_runtime.py',
+    '.codex-rules/_shared/framework_router.py': 'shared/task-routing/framework_router.py',
+    '.codex-rules/_shared/read_boundary.py': 'shared/task-routing/read_boundary.py',
+    '.codex-rules/_shared/references/task-control.md': 'shared/context-engineering/task-control.md',
+    '.codex-rules/_shared/references/read-boundary.md': 'shared/context-engineering/read-boundary.md',
+    '.codex-rules/_shared/references/context-policy.md': 'shared/context-engineering/context-policy.md',
+    '.codex-rules/_shared/references/lifecycle.md': 'shared/lifecycle/lifecycle.md',
+    '.codex-rules/_shared/references/verification-budget.md': 'shared/verification-budget/verification-budget.md',
+    '.codex-rules/_shared/references/code-quality-contract.md': 'shared/code-quality/code-quality-contract.md',
+    '.codex-rules/_shared/schemas/temporary-external-grant.schema.json': 'shared/schemas/temporary-external-grant.schema.json',
+    '.codex-rules/_shared/schemas/metadata-ack.schema.json': 'shared/schemas/metadata-ack.schema.json',
+}
+IOS_252_MAPPING = {k: v for k, v in IOS_TRUSTED_MAPPING.items() if '/schemas/' not in k}
+
+
+def trusted_ios_manifest(manifest: dict) -> None:
+    """仅接受此候选实际核验过的 iOS 版本和精确路径到来源映射。"""
+    version = manifest.get('suiteVersion')
+    expected = IOS_252_MAPPING if version == '2.5.2' else IOS_TRUSTED_MAPPING if version in {'2.6.1', '2.6.2-ruler-task-handoff'} else None
+    allowed_keys = {'schemaVersion', 'suiteVersion', 'framework', 'lifecycle', 'installedAt', 'suiteRoot', 'managedFiles', 'suiteSha256', 'contentSha256'}
+    required_keys = allowed_keys - {'contentSha256'}
+    if expected is None or manifest.get('schemaVersion') != '1.0' or manifest.get('framework') != 'ios-daily-development-rules' or manifest.get('lifecycle') != 'ios-maintenance' or set(manifest) - allowed_keys or not required_keys.issubset(manifest):
+        raise ValueError('未核验的框架版本或安装清单字段')
+    if not isinstance(manifest['suiteRoot'], str) or not Path(manifest['suiteRoot']).is_absolute() or not re.fullmatch(r'[0-9a-f]{64}', manifest['suiteSha256'] or ''):
+        raise ValueError('来源路径或套件摘要无效')
+    entries = manifest.get('managedFiles')
+    if not isinstance(entries, list) or len(entries) != len(expected): raise ValueError('受管映射数量不符')
+    observed = {}
+    for entry in entries:
+        if set(entry) != {'path', 'source', 'installedSha256', 'sourceSha256'} or entry['path'] in observed:
+            raise ValueError('受管映射字段或路径无效')
+        if entry['installedSha256'] != entry['sourceSha256'] or not re.fullmatch(r'[0-9a-f]{64}', entry['installedSha256']):
+            raise ValueError('受管来源摘要不符')
+        observed[entry['path']] = entry['source']
+    if observed != expected: raise ValueError('受管映射与已核验版本不符')
+
 
 def task_scoped(function):
     """每次调用按显式任务 ID 装载临时范围，结束后恢复上下文，避免跨线程/任务污染。"""
@@ -363,6 +405,203 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
         return state
 
 
+def verified_upgrade_paths(root: Path, state: dict, acceptance: dict, current: dict) -> set[str]:
+    """逐项复核已授权事务链；返回仅属于该链且仍与最终内容匹配的规则路径。"""
+    boundary = ReadBoundary(root)
+    if acceptance.get('projectRoot') != str(root) or acceptance.get('taskId') != state['taskId']:
+        raise ValueError('升级承接项目或任务不匹配')
+    if acceptance.get('baselineSha256') != digest(state['baseline']):
+        raise ValueError('升级承接的不可变基线不匹配')
+    baseline_record = read_json(task_dir(root, state['taskId']) / 'baseline.json')
+    if baseline_record.get('taskId') != state['taskId'] or baseline_record.get('paths') != state['baseline'] or baseline_record.get('identity') != state['identity']:
+        raise ValueError('任务原始基线不匹配')
+    if not acceptance.get('confirmedBy') or not acceptance.get('authorizationSource'):
+        raise ValueError('升级承接缺少授权来源')
+    records = acceptance.get('transactions')
+    if not isinstance(records, list) or not records:
+        raise ValueError('缺少升级事务链')
+    pins = acceptance.get('trustedSuites')
+    if not isinstance(pins, list) or len(pins) != 3 or any(not isinstance(x, dict) or set(x) != {'version', 'suiteRoot', 'suiteSha256'} for x in pins):
+        raise ValueError('必须提供三个独立核验的套件来源')
+    pinned = {x['version']: x for x in pins}
+    if set(pinned) != {'2.5.2', '2.6.1', '2.6.2-ruler-task-handoff'}: raise ValueError('套件来源版本不符')
+    manifest_name = '.ai-project/framework-installation.json'
+    lifecycle_name = '.ai-project/lifecycle.json'
+    anchor = acceptance.get('anchor', {})
+    anchor_id = anchor.get('id', '')
+    if not re.fullmatch(r'[0-9a-f]{32}', anchor_id): raise ValueError('缺少已核验的起点事务')
+    anchor_bytes = boundary.read_bytes(f'.ai-project/upgrades/{anchor_id}/transaction.json')
+    if hashlib.sha256(anchor_bytes).hexdigest() != anchor.get('sha256'): raise ValueError('起点事务摘要不符')
+    anchor_tx = json.loads(anchor_bytes)
+    if anchor_tx.get('projectRoot') != str(root) or anchor_tx.get('status') != 'complete' or anchor_tx.get('planned') != anchor_tx.get('after'):
+        raise ValueError('起点事务无效')
+    previous_after = None
+    baseline = state['baseline']
+    initial = {}
+    final = {}
+    seen = set()
+    for item in records:
+        txid = item.get('id', '')
+        if not re.fullmatch(r'[0-9a-f]{32}', txid) or txid in seen:
+            raise ValueError('事务 ID 无效或重复')
+        seen.add(txid)
+        raw = boundary.read_bytes(f'.ai-project/upgrades/{txid}/transaction.json')
+        if hashlib.sha256(raw).hexdigest() != item.get('sha256'):
+            raise ValueError('升级事务内容变化')
+        tx = json.loads(raw)
+        before, planned, after = tx['before'], tx['planned'], tx['after']
+        if tx.get('projectRoot') != str(root) or tx.get('status') != 'complete' or set(before) != set(planned) or set(after) != set(planned) or after != planned:
+            raise ValueError('升级事务未完成或内容不一致')
+        old_manifest, new_manifest = json.loads(before[manifest_name]), json.loads(after[manifest_name])
+        trusted_ios_manifest(old_manifest); trusted_ios_manifest(new_manifest)
+        if 'contentSha256' in new_manifest: raise ValueError('升级安装清单有额外字段')
+        for manifest in (old_manifest, new_manifest):
+            pin = pinned[manifest['suiteVersion']]
+            if manifest['suiteRoot'] != pin['suiteRoot'] or manifest['suiteSha256'] != pin['suiteSha256']:
+                raise ValueError('套件来源与人工核验摘要不符')
+        if (old_manifest['suiteVersion'], new_manifest['suiteVersion']) not in {
+            ('2.5.2', '2.6.1'), ('2.6.1', '2.6.2-ruler-task-handoff')
+        }:
+            raise ValueError('未核验的版本转换')
+        old_life, new_life = json.loads(before[lifecycle_name]), json.loads(after[lifecycle_name])
+        expected_life = dict(old_life); expected_life['frameworkVersion'] = new_manifest['suiteVersion']
+        if old_life.get('frameworkVersion') != old_manifest['suiteVersion'] or new_life != expected_life:
+            raise ValueError('升级事务改变了生命周期非版本字段')
+        old_managed = {x['path']: x for x in old_manifest['managedFiles']}
+        new_managed = {x['path']: x for x in new_manifest['managedFiles']}
+        if len(old_managed) != len(old_manifest['managedFiles']) or len(new_managed) != len(new_manifest['managedFiles']):
+            raise ValueError('安装清单路径重复')
+        managed = set(old_managed) | set(new_managed)
+        if set(before) != managed | {manifest_name, lifecycle_name}:
+            raise ValueError('事务包含非受管文件')
+        if previous_after is not None and any(before.get(n) != previous_after.get(n) for n in set(before) | set(previous_after)):
+            raise ValueError('升级事务链不连续')
+        if previous_after is None:
+            if anchor_tx['after'].get(manifest_name) != before[manifest_name] or anchor_tx['after'].get(lifecycle_name) != before[lifecycle_name]:
+                raise ValueError('起点事务与首个升级事务不连续')
+            old_identity = {'version': old_manifest['suiteVersion'], 'managedSha256': digest(old_manifest['managedFiles'])}
+            evidence = [v.get('binding', {}).get('rulesIdentity') for v in state['completion'].values() if isinstance(v, dict)]
+            if old_identity != acceptance.get('previousRulesIdentity') or old_identity not in evidence:
+                raise ValueError('原规则身份缺少任务证据')
+        for name in managed:
+            if not name.startswith('.codex-rules/') or safe_path(root, name) != root / name:
+                raise ValueError('事务受管路径越界')
+            old_hash = hashlib.sha256(before[name].encode()).hexdigest() if before[name] is not None else None
+            new_hash = hashlib.sha256(after[name].encode()).hexdigest() if after[name] is not None else None
+            if old_hash != (old_managed[name]['installedSha256'] if name in old_managed else None) or new_hash != (new_managed[name]['installedSha256'] if name in new_managed else None):
+                raise ValueError('事务文件与安装清单不匹配')
+            if name not in initial:
+                initial[name] = old_hash
+            final[name] = new_hash
+        previous_after = after
+    if any(baseline.get(name) != value for name, value in initial.items()):
+        raise ValueError('事务起点与任务基线不匹配')
+    if any(current.get(name) != value for name, value in final.items()):
+        raise ValueError('当前规则与事务终点不匹配')
+    if boundary.read_text(manifest_name) != previous_after[manifest_name] or boundary.read_text(lifecycle_name) != previous_after[lifecycle_name]:
+        raise ValueError('当前安装清单或生命周期不匹配')
+    if rules_identity(root) != acceptance.get('rulesIdentity'):
+        raise ValueError('最终规则身份不匹配')
+    return {name for name in final if baseline.get(name) != current.get(name)}
+
+
+@task_scoped
+def accept_framework_upgrade(root: Path, task_id: str, transaction_ids: list[str], pending_path: str,
+                             old_hash: str, new_hash: str, confirmed_by: str, authorization_source: str,
+                             apply: bool = False, preview_hash: str | None = None,
+                             anchor_id: str = '', anchor_sha256: str = '', trusted_suites: list | None = None) -> dict:
+    """承接完整升级链；待确认 UI 只用于核对，不随升级承接而放行。"""
+    root = root.resolve()
+    if not confirmed_by.strip() or not authorization_source.strip():
+        raise ValueError('缺少确认人或授权来源')
+    if not re.fullmatch(r'[0-9a-f]{32}', anchor_id or '') or not re.fullmatch(r'[0-9a-f]{64}', anchor_sha256 or ''):
+        raise ValueError('必须提供人工核验的起点事务 ID 和摘要')
+    if not re.fullmatch(r'.+\.xcodeproj/project\.xcworkspace/xcuserdata/[^/]+\.xcuserdatad/UserInterfaceState\.xcuserstate', pending_path):
+        raise ValueError('待确认路径不是 Xcode 用户窗口状态')
+    if not all(re.fullmatch(r'[0-9a-f]{64}', h or '') for h in (old_hash, new_hash)) or old_hash == new_hash:
+        raise ValueError('待确认摘要无效')
+    directory = task_dir(root, task_id)
+    with contextlib.ExitStack() as locks:
+        if apply:
+            locks.enter_context(project_lock(root, '.ai-project/framework-update.lock'))
+            locks.enter_context(project_lock(root, f'.ai-project/tasks/{task_id}/verification.lock'))
+            locks.enter_context(project_lock(root, '.ai-project/tasks.lock'))
+        state = read_json(directory / 'state.json')
+        original = read_json(directory / 'baseline.json')
+        if state['status'] in {'closed', 'cancelled'} or confirmed_identity(root) != state['identity']:
+            raise ValueError('任务已结束或项目身份变化')
+        if original.get('taskId') != task_id or original.get('paths') != state['baseline'] or original.get('identity') != state['identity']:
+            raise ValueError('不可变基线不匹配')
+        if pending_path in state['allowedFiles'] or match(pending_path, state['protectedGlobs']) or state['baseline'].get(pending_path) != old_hash:
+            raise ValueError('待确认 UI 的旧摘要或范围不符')
+        boundary = ReadBoundary(root)
+        if hashlib.sha256(boundary.read_bytes(pending_path)).hexdigest() != new_hash:
+            raise ValueError('待确认 UI 当前摘要不符')
+        records = []
+        for txid in transaction_ids:
+            if not re.fullmatch(r'[0-9a-f]{32}', txid): raise ValueError('事务 ID 无效')
+            data = boundary.read_bytes(f'.ai-project/upgrades/{txid}/transaction.json')
+            records.append({'id': txid, 'sha256': hashlib.sha256(data).hexdigest()})
+        if not records: raise ValueError('缺少升级事务链')
+        first = boundary.read_json(f".ai-project/upgrades/{records[0]['id']}/transaction.json")
+        old_manifest = json.loads(first['before']['.ai-project/framework-installation.json'])
+        current = tree_snapshot(root)
+        acceptance = {'projectRoot': str(root), 'taskId': task_id, 'baselineSha256': digest(state['baseline']),
+                      'transactions': records, 'rulesIdentity': rules_identity(root), 'confirmedBy': confirmed_by,
+                      'authorizationSource': authorization_source, 'snapshotSha256': digest(current),
+                      'pendingMetadata': {'path': pending_path, 'oldSha256': old_hash, 'newSha256': new_hash},
+                      'anchor': {'id': anchor_id, 'sha256': anchor_sha256},
+                      'trustedSuites': trusted_suites,
+                      'previousRulesIdentity': {'version': old_manifest['suiteVersion'], 'managedSha256': digest(old_manifest['managedFiles'])}}
+        existing = state.get('acceptedFrameworkUpgrade')
+        if existing:
+            if existing != acceptance: raise ValueError('已有不同升级承接记录')
+            verified_upgrade_paths(root, state, existing, current)
+            return {'status': 'already-accepted', 'acceptance': existing}
+        upgraded = verified_upgrade_paths(root, state, acceptance, current)
+        other = [n for n in set(current) | set(state['baseline']) if current.get(n) != state['baseline'].get(n)
+                 and n not in state['allowedFiles'] and n not in upgraded and n != pending_path]
+        if other: raise ValueError(f'存在其他范围外变化: {sorted(other)}')
+        preview = digest({'state': digest(state), 'snapshot': digest(current), 'acceptance': acceptance,
+                          'pendingPath': pending_path, 'oldSha256': old_hash, 'newSha256': new_hash})
+        if not apply: return {'status': 'dry-run', 'acceptance': acceptance, 'previewSha256': preview, 'writes': []}
+        if preview_hash != preview: raise ValueError('预览已变化或摘要不匹配')
+        backup = directory / 'upgrade-confirmations' / (preview + '.json')
+        boundary.require(backup.relative_to(root).as_posix())
+        task_fd = secure_fd(root, directory.relative_to(root).as_posix(), directory=True)
+        try:
+            try: os.mkdir('upgrade-confirmations', 0o700, dir_fd=task_fd)
+            except FileExistsError: pass
+            audit_fd = os.open('upgrade-confirmations', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=task_fd)
+            try:
+                tempname = '.pending-' + os.urandom(16).hex()
+                try:
+                    fd = os.open(tempname, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=audit_fd)
+                    with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                        json.dump({'stateBefore': state, 'acceptance': acceptance, 'previewSha256': preview}, stream, ensure_ascii=False, indent=2)
+                        stream.flush(); os.fsync(stream.fileno())
+                    os.link(tempname, backup.name, src_dir_fd=audit_fd, dst_dir_fd=audit_fd, follow_symlinks=False)
+                    os.fsync(audit_fd)
+                except FileExistsError:
+                    stored = boundary.read_json(backup.relative_to(root).as_posix())
+                    if stored != {'stateBefore': state, 'acceptance': acceptance, 'previewSha256': preview}: raise ValueError('恢复备份内容不符')
+                finally:
+                    try: os.unlink(tempname, dir_fd=audit_fd)
+                    except FileNotFoundError: pass
+            finally: os.close(audit_fd)
+        finally: os.close(task_fd)
+        refreshed = tree_snapshot(root)
+        if digest(refreshed) != digest(current): raise ValueError('承接期间快照变化')
+        verified_upgrade_paths(root, state, acceptance, refreshed)
+        proposed = json.loads(json.dumps(state)); proposed['acceptedFrameworkUpgrade'] = acceptance
+        for item in proposed['completion'].values():
+            if isinstance(item, dict) and item.get('status') == 'passed': item['status'] = 'stale'
+        atomic_json(directory / 'state.json', proposed)
+        try: write_handoff(directory, proposed)
+        except OSError: pass
+        return {'status': 'accepted', 'acceptance': acceptance, 'backup': str(backup)}
+
+
 @task_scoped
 def check_scope(root: Path, state: dict) -> dict:
     """比较当前真实文件与基线；禁止依赖修改、越界和覆盖已有修改，返回差异或抛错。"""
@@ -387,7 +626,8 @@ def check_scope(root: Path, state: dict) -> dict:
                 if other["status"] not in {"closed", "cancelled"} or current.get(name) == other["checkpoint"].get(name):
                     other_files.add(name)
     acknowledged = state.get('acknowledgedMetadata', {})
-    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and not (name in acknowledged and state['baseline'].get(name) == acknowledged[name].get('oldSha256') and current.get(name) == acknowledged[name].get('newSha256'))]
+    upgrades = verified_upgrade_paths(root, state, state['acceptedFrameworkUpgrade'], current) if 'acceptedFrameworkUpgrade' in state else set()
+    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and name not in upgrades and not (name in acknowledged and state['baseline'].get(name) == acknowledged[name].get('oldSha256') and current.get(name) == acknowledged[name].get('newSha256'))]
     if unexpected:
         raise ValueError(f"范围外或原有用户文件发生变化，暂停人工核对: {unexpected}")
     return {"changedFiles": [name for name in changed if name in state["allowedFiles"]], "current": current, "coverage": ReadBoundary(root).coverage()}
@@ -422,7 +662,8 @@ def acknowledge_metadata(root: Path, task_id: str, path: str, old_hash: str, new
         entry = {'oldSha256': old_hash, 'newSha256': new_hash, 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'taskId': task_id, 'path': path, 'at': now()}
         proposed.setdefault('acknowledgedMetadata', {})[path] = entry
         scoped = check_scope(root, proposed)
-        other = [name for name in set(scoped['current']) | set(state['baseline']) if scoped['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name != path]
+        upgrades = verified_upgrade_paths(root, state, state['acceptedFrameworkUpgrade'], scoped['current']) if 'acceptedFrameworkUpgrade' in state else set()
+        other = [name for name in set(scoped['current']) | set(state['baseline']) if scoped['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name not in upgrades and name != path]
         if other:
             raise ValueError(f'存在其他范围外变化，拒绝确认: {sorted(other)}')
         preview = digest({'projectRoot': str(root), 'taskId': task_id, 'path': path, 'oldSha256': old_hash, 'newSha256': new_hash, 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'stateSha256': digest(state), 'snapshotSha256': digest(scoped['current'])})
@@ -455,7 +696,7 @@ def acknowledge_metadata(root: Path, task_id: str, path: str, old_hash: str, new
             os.close(task_fd)
         # 备份后再核对，避免确认期间文件再次变化。
         refreshed = check_scope(root, proposed)
-        other = [name for name in set(refreshed['current']) | set(state['baseline']) if refreshed['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name != path]
+        other = [name for name in set(refreshed['current']) | set(state['baseline']) if refreshed['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name not in upgrades and name != path]
         if other:
             raise ValueError(f'备份期间出现其他范围外变化: {sorted(other)}')
         if digest(refreshed['current']) != digest(scoped['current']):
@@ -669,7 +910,7 @@ def verify_configuration(root: Path, task_id: str, profile: str = "D0") -> dict:
 def main() -> int:
     """提供身份/init/resume/checkpoint/verify 命令；预期冲突以 blocked 和非零退出表达。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("identity", "init", "resume", "check", "checkpoint", "verify", "verify-config", "ack-metadata"))
+    parser.add_argument("command", choices=("identity", "init", "resume", "check", "checkpoint", "verify", "verify-config", "ack-metadata", "accept-framework-upgrade"))
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--task-id")
     parser.add_argument('--task-read-policy', type=Path, help='仅 init 使用的任务级范围文件，不能写入共享项目策略')
@@ -696,6 +937,10 @@ def main() -> int:
     parser.add_argument('--preview-sha256')
     parser.add_argument('--confirmed-by', default='')
     parser.add_argument('--authorization-source', default='')
+    parser.add_argument('--transaction-id', action='append', default=[])
+    parser.add_argument('--anchor-transaction-id', default='')
+    parser.add_argument('--anchor-sha256', default='')
+    parser.add_argument('--trusted-suite', action='append', default=[])
     args = parser.parse_args()
     root = args.project.expanduser().resolve()
     try:
@@ -721,6 +966,10 @@ def main() -> int:
             if len(args.file) != 1:
                 raise ValueError('必须指定且只指定一个 --file')
             result = acknowledge_metadata(root, args.task_id, args.file[0], args.old_sha256, args.new_sha256, args.reason, args.apply, args.preview_sha256, args.confirmed_by, args.authorization_source)
+        elif args.command == 'accept-framework-upgrade':
+            if len(args.file) != 1:
+                raise ValueError('必须指定且只指定一个待确认 UI 文件')
+            result = accept_framework_upgrade(root, args.task_id, args.transaction_id, args.file[0], args.old_sha256, args.new_sha256, args.confirmed_by, args.authorization_source, args.apply, args.preview_sha256, args.anchor_transaction_id, args.anchor_sha256, [json.loads(x) for x in args.trusted_suite])
         elif args.command == "verify-config":
             result = verify_configuration(root, args.task_id, args.profile)
         else:

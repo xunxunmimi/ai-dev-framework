@@ -14,5 +14,6 @@
 | `evals/scripts/self_test.py` | 通过 |
 | `evals/scripts/safety_regression.py` | 通过 |
 | `installers/upgrade_self_test.py` | 通过 |
+| `shared/task-routing/upgrade_continuation_self_test.py` | 通过 |
 
 此记录仅说明上述检查结果，不代表候选已经独立审查，不构成发布批准，也不说明与 boniumac 2.6.5 兼容。

@@ -37,3 +37,9 @@ python3 .codex-rules/_shared/task_runtime.py resume --project /绝对工程 --ta
 ## 2.6.1 精确元数据确认
 
 确认前仅预览：`task_runtime.py ack-metadata --project /项目 --task-id ID --file 相对路径 --old-sha256 旧值 --new-sha256 新值 --reason 用户确认原因 --confirmed-by 确认人 --authorization-source 授权来源`；审核输出中的 previewSha256，再加 `--apply --preview-sha256 该摘要` 才保存。确认人和来源是记录，不是身份认证。当前仅接受 Xcode `*.xcodeproj/project.xcworkspace/xcuserdata/*.xcuserdatad/UserInterfaceState.xcuserstate` 的精确文件。旧值必须匹配不可变 baseline.json 和 state 基线，新值必须匹配当前安全读取结果。其他非本任务变化一律拒绝，原 baseline 不变；记录任务、路径、旧/新摘要和原因，备份原状态后原子提交，旧 passed 标记 stale。再次变化会重新阻塞。备份在任务目录 metadata-confirmations；中断后先读 state.json 与备份，不盲目重放。dry-run 不取得写锁，仅供预览，apply 会重新核验。
+
+## 2.6.2-ruler-task-handoff 开发候选：承接受管升级
+
+此候选未经独立审查，不用于业务项目。`accept-framework-upgrade` 以 `--project`、`--task-id`、人工审查过的起点 `--anchor-transaction-id` 和 `--anchor-sha256`、按时间顺序重复的 `--transaction-id`、待单独确认的 UI `--file`、`--old-sha256`、`--new-sha256`、`--confirmed-by` 和 `--authorization-source` 预览；审查后另传 `--apply --preview-sha256` 提交。UI 仍须另走 `ack-metadata`，升级承接不会放行它。旧基线和旧报告不重写；旧通过维度标记 stale。规则变化必须匹配完整事务链、原任务规则身份、最终安装清单及当前文件；其他范围外变化阻断。生命周期只能改变框架版本，起点来自事先核验过的历史事务。仅支持明列的 iOS 2.5.2、2.6.1 和本候选版本映射。原任务没有旧规则身份验证证据时不支持承接。事务摘要和授权来源均不是签名或身份认证；须由审查人核实历史来源，不能声称不可伪造。
+
+另需重复传入三项 `--trusted-suite`，每项是包含 `version`、`suiteRoot`、`suiteSha256` 的 JSON 对象，值须来自审查人独立核验，而不能照抄待承接事务后自行宣称可信。旧 2.5.2 清单的原 suiteRoot 若已不存在，必须另行核对备份内容摘要；该字段保留历史原路径，不表示原路径可用于回滚。
