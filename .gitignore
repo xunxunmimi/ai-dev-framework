@@ -1,0 +1,25 @@
+# Only reviewed framework source belongs here.
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.cer
+*.mobileprovision
+.ai-project/
+.codex/
+.claude/
+.aws/
+.ssh/
+.gnupg/
+node_modules/
+build/
+dist/
+releases/
+archive/
+sessions/
+logs/
+*.zip
