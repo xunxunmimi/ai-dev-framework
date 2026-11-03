@@ -1,0 +1,4 @@
+interface:
+  display_name: "Optional Unslop UI"
+  short_description: "Selected-project UI polish that preserves existing designs"
+  default_prompt: "Use $unslop-ui for this selected project's requested UI work, checking project opt-in, target files, and existing designs first."

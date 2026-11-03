@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "repository": "https://github.com/heydamir/unslop",
+  "commit": "a6f121eee5f29c2f74976b75456feae8b66afb3a",
+  "checkedOn": "2026-11-03",
+  "license": "CC-BY-4.0",
+  "author": "Damir Sokolovsky (@heydamir)",
+  "attribution": "NOTICE.md",
+  "licenseText": "LICENSE.md",
+  "adaptation": "Project-local selection, file scopes, existing-design priority and native-platform boundaries; upstream runtime scripts and images excluded.",
+  "copiedFiles": [
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE.md",
+      "sourceBlobSha": "da6ab6cc8f333d7e89a99812866df8f24374d47c",
+      "modified": false
+    },
+    {
+      "source": "CITATION.cff",
+      "destination": "references/upstream-citation.md",
+      "sourceBlobSha": "048591f33cba9f86ade4234df30a06e984877dd3",
+      "modified": false
+    },
+    {
+      "source": "skills/unslop/references/signs.md",
+      "destination": "references/upstream-signs.md",
+      "sourceBlobSha": "e9bae0369394d56ed080ef8a7e3d15bd4ec70a7f",
+      "modified": false
+    },
+    {
+      "source": "skills/unslop/references/tokens.md",
+      "destination": "references/upstream-tokens.md",
+      "sourceBlobSha": "431cdc3f68650819274b22b91df9764d8f0a64d6",
+      "modified": false
+    }
+  ],
+  "entrypointSource": {
+    "path": "skills/unslop/SKILL.md",
+    "sourceBlobSha": "9a1c49e2e5062082024ee5f2a65fbdc554b05cd6",
+    "copied": false
+  },
+  "automaticUpdates": false
+}

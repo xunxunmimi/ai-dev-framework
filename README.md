@@ -11,6 +11,7 @@
 `capabilities/` 保存可选的窄能力，不是主框架，也不会默认接入所有项目。当前包含：
 
 - `swiftui-visual-design-review`：SwiftUI 视觉方向、品牌一致性、动效和渲染验收；只在相关 iOS 项目的 `.agents/skills/` 中按需接入。
+- `unslop-ui`：按项目与具体文件选择的新 UI/明确 UI 优化能力，默认关闭，已有设计优先。独立接入方式见 [可选 Unslop UI](docs/可选Unslop-UI.md)；原安装入口不会安装它。
 
 ## 生命周期
 
