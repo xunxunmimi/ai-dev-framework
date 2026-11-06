@@ -19,7 +19,7 @@ for parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(shared))
         break
 from read_boundary import ReadBoundary, require_complete, SNAPSHOT_EXCLUDES
-from task_runtime import check_operation_hold, atomic_json, binding, digest as content_digest, validate_report, lock, task_dir, read_json
+from task_runtime import check_operation_hold, atomic_json, binding, digest as content_digest, validate_report, lock, task_dir, read_json, protocol_gate, verification_session, validate_state
 
 
 
@@ -68,6 +68,7 @@ def main() -> int:
     target = Path(config["targetRoot"]).resolve()
     if target != target_from_path.resolve():
         raise ValueError("Gate 配置目标与读取授权根不一致")
+    protocol_gate(target)
     evidence = Path(config["evidenceRoot"]).resolve()
     cache = target / ".migration-workspace-v2/cache/gates"
     by_id = {gate["id"]: gate for gate in config.get("gates", [])}
@@ -78,7 +79,7 @@ def main() -> int:
         return 0
     if not args.task_id:
         raise ValueError("执行 Gate 必须提供 --task-id；先初始化并核对任务身份")
-    with lock(task_dir(target, args.task_id) / "verification.lock"):
+    with verification_session(target, args.task_id) as initial_task:
         workspace = target / ".migration-workspace-v2"
         if not evidence.is_relative_to(workspace / "evidence"):
             raise ValueError("Gate 日志只能写到迁移工作区 evidence 目录")
@@ -109,6 +110,11 @@ def main() -> int:
             return 1
         results, failed = [], False
         for gate_id in selected:
+            latest = validate_state(read_json(task_dir(target, args.task_id) / 'state.json'))
+            if latest['status'] != 'active' or latest['generation'] != initial_task['generation']:
+                results.append({'id': gate_id, 'status': 'blocked', 'reason': 'task generation or status changed'})
+                failed = True
+                break
             if not re.fullmatch(r"[A-Za-z0-9_.-]+", gate_id):
                 raise ValueError("Gate ID 包含不安全路径字符")
             gate = by_id.get(gate_id)
@@ -164,6 +170,8 @@ def main() -> int:
                 status = "passed" if completed.returncode == 0 else "failed"
                 item = {"id": gate_id, "status": status, "reused": False, "fingerprint": mark, "evidence": str(log)}
             except (OSError, subprocess.TimeoutExpired) as error:
+                if isinstance(error, subprocess.TimeoutExpired):
+                    initial_task['_retainExecutionLease'] = True  # 超时未证明后代进程停写，租约须显式恢复。
                 log.write_text(redact(str(error)) + "\n", encoding="utf-8")
                 item = {"id": gate_id, "status": "blocked", "reused": False, "fingerprint": mark, "evidence": str(log)}
             item["binding"] = before_binding
@@ -173,7 +181,11 @@ def main() -> int:
             results.append(item)
             failed = failed or item["status"] != "passed"
         # 执行中源码或配置发生变化，必须拒绝把旧输入的结果记作当前 passed。
-        after_binding = binding(target, args.task_id, args.profile, args.slice_id)
+        try:
+            after_binding = binding(target, args.task_id, args.profile, args.slice_id)
+        except (ValueError, OSError):
+            after_binding = None  # 终结后只写历史结果，不生成新代 passed。
+
         failed = failed or before_binding != after_binding or config_sha != content_digest(json.loads(args.config.read_text()))
         from release_evidence import validate_release
         release_errors = validate_release(config, selected, results, boundary, before_binding) if purpose == 'release' else []

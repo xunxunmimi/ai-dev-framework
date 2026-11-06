@@ -21,7 +21,7 @@ def load_shared() -> None:
 
 load_shared()
 from read_boundary import require_complete
-from task_runtime import atomic_json, task_dir, confirmed_identity
+from task_runtime import atomic_json, task_dir, task_identity, validate_state, read_json, protocol_gate, project_lock, task_record
 from task_router import build_context, snapshot, task_files  # noqa: E402
 
 
@@ -79,6 +79,7 @@ def main() -> int:
 
     project = args.project.expanduser().resolve()
     boundary = require_complete(project)
+    protocol_gate(project)
     control = project / ".migration-v2"
     config = boundary.read_json(".migration-v2/project.json")
     framework = Path(config["frameworkRoot"])
@@ -86,7 +87,10 @@ def main() -> int:
         raise ValueError("写任务上下文必须指定 --task-id 并先 task_runtime init")
     directory = task_dir(project, args.task_id) if args.task_id else None
     if directory:
-        confirmed_identity(project)
+        task_state = task_record(project, directory / 'state.json')
+        if task_state['status'] != 'active':
+            raise ValueError('只有活动任务可生成迁移上下文')
+        task_identity(project, task_state)
     baseline_path = directory / "baseline.json" if directory else control / "task-baseline.json"
     baseline = boundary.read_json(baseline_path.relative_to(project).as_posix()) if boundary.exists(baseline_path.relative_to(project).as_posix()) else None
     if directory and baseline:
@@ -139,7 +143,12 @@ def main() -> int:
     if args.write_baseline:
         raise ValueError("基线由 task_runtime init 创建，恢复不能重写")
     if args.write_context and not args.dry_run:
-        atomic_json(directory / "context.json", context)
+        with project_lock(project, '.ai-project/tasks.lock'):
+            latest = task_record(project, directory / 'state.json')
+            if latest != task_state or latest['status'] != 'active':
+                raise ValueError('分类期间任务发生变化，拒绝终态回写')
+            task_identity(project, latest)
+            atomic_json(directory / "context.json", context)
     print(json.dumps(context, ensure_ascii=False, indent=2))
     return 0
 

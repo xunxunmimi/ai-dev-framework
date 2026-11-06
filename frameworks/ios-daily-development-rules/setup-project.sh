@@ -50,13 +50,12 @@ if [[ -d "$target_path/.migration-v2" || -d "$target_path/.migration-agents" ]];
 fi
 fi
 
-# 已接入项目必须先审计；不能靠管理标记覆盖用户改动。
-if [[ -f "$ai_project/framework-installation.json" ]]; then
-  python3 "$suite_dir/installers/project_framework.py" audit "$target_path" --suite "$suite_dir" >/dev/null || exit 3
-elif [[ -d "$target_path/.codex-rules" ]]; then
-  printf '%s\n' 'Existing rules require adopt/audit before setup; refusing overwrite.' >&2
-  exit 3
+# 首装由 Python 持 update→tasks 双锁覆盖全部复制；不能把 setup 当作升级入口。
+if [[ -z "${AI_FRAMEWORK_INSTALL_LOCK_FDS:-}" ]]; then
+  exec python3 "$suite_dir/installers/project_framework.py" setup-new "$target_path" --suite "$suite_dir" \
+    --setup-argv "$kit_dir/setup-project.sh" "$target_path" "$lifecycle" "${3:-}"
 fi
+python3 "$suite_dir/installers/project_framework.py" setup-lock-check "$target_path" --suite "$suite_dir"
 mkdir -p "$rules_dir/references" "$shared_rules/references" "$shared_rules/schemas" "$ai_project/checkpoints"
 
 copy_managed() {

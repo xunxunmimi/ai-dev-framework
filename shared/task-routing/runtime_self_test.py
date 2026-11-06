@@ -306,6 +306,16 @@ class RuntimeScenarios(unittest.TestCase):
         workspace = self.root / ".migration-workspace-v2"
         (workspace / "ir").mkdir(parents=True)
         (workspace / "ir/migration-plan.json").write_text('{"slices":[]}')
+        suite = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(suite / 'installers'))
+        from project_framework import MANAGED_MAPPINGS, record_manifest
+        import shutil
+        for destination, source in MANAGED_MAPPINGS['ios-daily-development-rules']:
+            path = self.root / destination
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(suite / source, path)
+        record_manifest(self.root, suite, 'ios-daily-development-rules', 'ios-maintenance', MANAGED_MAPPINGS['ios-daily-development-rules'])
+        atomic_json(self.root / '.ai-project/identity.json', observe_identity(self.root, 'ios'))
         config = self.root / ".migration-v2/gate-config.json"
         atomic_json(config, {"targetRoot":str(self.root), "evidenceRoot":str(workspace / "evidence/gates"), "profiles":{"T3":["one","two"]}, "gates":[{"id":name,"confirmed":True,"argv":[sys.executable,"-c","pass"]} for name in ("one","two")]})
         begin(self.root, "gates", ["one.swift"], "门禁报告验证")

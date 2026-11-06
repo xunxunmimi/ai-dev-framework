@@ -37,3 +37,7 @@ python3 .codex-rules/_shared/task_runtime.py resume --project /绝对工程 --ta
 ## 2.6.1 精确元数据确认
 
 确认前仅预览：`task_runtime.py ack-metadata --project /项目 --task-id ID --file 相对路径 --old-sha256 旧值 --new-sha256 新值 --reason 用户确认原因 --confirmed-by 确认人 --authorization-source 授权来源`；审核输出中的 previewSha256，再加 `--apply --preview-sha256 该摘要` 才保存。确认人和来源是记录，不是身份认证。当前仅接受 Xcode `*.xcodeproj/project.xcworkspace/xcuserdata/*.xcuserdatad/UserInterfaceState.xcuserstate` 的精确文件。旧值必须匹配不可变 baseline.json 和 state 基线，新值必须匹配当前安全读取结果。其他非本任务变化一律拒绝，原 baseline 不变；记录任务、路径、旧/新摘要和原因，备份原状态后原子提交，旧 passed 标记 stale。再次变化会重新阻塞。备份在任务目录 metadata-confirmations；中断后先读 state.json 与备份，不盲目重放。dry-run 不取得写锁，仅供预览，apply 会重新核验。
+
+## 协议 2 隔离候选
+
+`2.6.6-lifecycle-review` 将稳定归属与配置上下文分离，提供逐条 `cancel` / `migrate-task` 的预览、摘要绑定、幂等与 generation；原 identity/baseline/报告保留。取消不代表验收，通过旧证据不能跨代复用，终态只读历史。未知/部分协议拒绝，旧 writer 必须离线停止，禁止在线热升级。完整命令、兼容与迁移/回退限制见套件 `docs/2.6.6-隔离生命周期候选.md`。这是候选系列，不能当作正式 release；早期未部署描述属于隔离快照，实际安装须核确切提交、内容摘要及项目回执。
