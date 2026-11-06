@@ -40,4 +40,4 @@ python3 .codex-rules/_shared/task_runtime.py resume --project /绝对工程 --ta
 
 ## 协议 2 隔离候选
 
-`2.6.6-lifecycle-review` 将稳定归属与配置上下文分离，提供逐条 `cancel` / `migrate-task` 的预览、摘要绑定、幂等与 generation；原 identity/baseline/报告保留。取消不代表验收，通过旧证据不能跨代复用，终态只读历史。未知/部分协议拒绝，旧 writer 必须离线停止，禁止在线热升级。完整命令、兼容与迁移/回退限制见套件 `docs/2.6.6-隔离生命周期候选.md`。这是未部署的本地候选，不能当作正式上游版本。
+`2.6.6-lifecycle-review` 将稳定归属与配置上下文分离，提供逐条 `cancel` / `migrate-task` 的预览、摘要绑定、幂等与 generation；原 identity/baseline/报告保留。取消不代表验收，通过旧证据不能跨代复用，终态只读历史。未知/部分协议拒绝，旧 writer 必须离线停止，禁止在线热升级。完整命令、兼容与迁移/回退限制见套件 `docs/2.6.6-隔离生命周期候选.md`。这是候选系列，不能当作正式 release；早期未部署描述属于隔离快照，实际安装须核确切提交、内容摘要及项目回执。

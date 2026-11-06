@@ -10,7 +10,7 @@ from analyze_source import prepare_discovery
 from classify_task import route_tools
 from detect_gates import detect as detect_gates
 from migration_state import ensure_state
-from read_boundary import require_complete
+from read_boundary import ReadBoundary, require_complete
 
 
 def nested(a: Path, b: Path) -> bool:
@@ -43,11 +43,19 @@ def main() -> int:
     sys.path.insert(0, str(suite / "installers"))
     from project_framework import installation_locks, installation_states, audit_project, manifest_protocol, read_manifest, require_fresh_installation
     with installation_locks(target):
-        if installation_states(target):
-            raise SystemExit("existing tasks must be explicitly ended before migration initialization/resume writes")
         installed = (target / ".ai-project/framework-installation.json").is_file()
         if installed:
-            manifest_protocol(read_manifest(target))
+            manifest = read_manifest(target)
+            manifest_protocol(manifest)
+            # 日常框架的完整清单不代表迁移规则完整；禁止借 resume 隐式切换框架或补写迁移控制。
+            if manifest.get("framework") != "ios-to-harmony-migrator-v2":
+                raise SystemExit("existing installation is not ios-to-harmony-migrator-v2; migration resume cannot switch frameworks")
+            # 严格解析所有已知/旧记录后，仅无遗留执行的合法终态释放占用；不改写原状态和证据。
+            states = installation_states(target, manifest.get("legacyArtifactReview"))
+            if any(state["status"] not in {"closed", "cancelled"} for state in states):
+                raise SystemExit("existing tasks must be explicitly ended before migration initialization/resume writes")
+            if any(state.get("pendingExecutions") for state in states):
+                raise SystemExit("pending task executions must be explicitly released before migration initialization/resume writes")
             audit = audit_project(target, suite)
             if audit["installedTaskProtocolVersion"] != "2" or not audit["safeToUpdate"] or audit["updateAvailable"]:
                 raise SystemExit("existing migration rules require audit and explicit offline update; resume cannot install rules")
@@ -61,6 +69,15 @@ def initialize(source: Path, target: Path, framework: Path, suite: Path, args, i
     control = target / ".migration-v2"
     workspace = target / ".migration-workspace-v2"
     ai_project = target / ".ai-project"
+    project_file = control / "project.json"
+    # 先核既有控制中心归属，拒绝其他源/目标时不能先改写发现索引与基线。
+    boundary = ReadBoundary(target)
+    existing = boundary.read_json(".migration-v2/project.json") if boundary.exists(".migration-v2/project.json") else None
+    if installed and existing is None:
+        raise SystemExit("existing migration control center is missing project.json; audit/recovery required before resume")
+    if existing is not None:
+        if Path(existing["sourceRoot"]).resolve() != source or Path(existing["targetRoot"]).resolve() != target:
+            raise SystemExit("existing V2 control center belongs to different source or target")
     control.mkdir(exist_ok=True)
     ai_project.mkdir(exist_ok=True)
     for name in ("ir", "reports", "evidence", "cache", "state"):
@@ -76,7 +93,6 @@ def initialize(source: Path, target: Path, framework: Path, suite: Path, args, i
                 raise SystemExit("existing unmanaged migration rule needs adopt/audit before setup: " + relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text((suite / source_relative).read_text(encoding="utf-8"), encoding="utf-8")
-    project_file = control / "project.json"
     values = {
         "PROJECT_NAME": args.name or source.name,
         "SOURCE_ROOT": str(source),
@@ -85,10 +101,7 @@ def initialize(source: Path, target: Path, framework: Path, suite: Path, args, i
         "WORKSPACE_ROOT": str(workspace),
         "FRAMEWORK_VERSION": (suite / "VERSION").read_text(encoding="utf-8").strip(),
     }
-    if project_file.exists():
-        existing = json.loads(project_file.read_text(encoding="utf-8"))
-        if Path(existing["sourceRoot"]).resolve() != source or Path(existing["targetRoot"]).resolve() != target:
-            raise SystemExit("existing V2 control center belongs to different source or target")
+    if existing is not None:
         existing["frameworkRoot"] = str(framework)
         existing["frameworkVersion"] = values["FRAMEWORK_VERSION"]
         existing["stateFile"] = str(workspace / "state/migration-state.json")

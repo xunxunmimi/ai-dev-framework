@@ -567,5 +567,211 @@ class UpgradeScenarios(unittest.TestCase):
         self.assertFalse((self.project / ".ai-project/upgrades").exists())
 
 
+class MigrationResumeScenarios(unittest.TestCase):
+    """真实迁移入口区分历史终态、仍占用任务和安装类型，不改写旧证据。"""
+
+    def setUp(self):
+        """仅建立完整授权的小型合成源/目标；每次测试从真正首装开始。"""
+        self.temporary = tempfile.TemporaryDirectory(prefix="migration-resume-")
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name).resolve()
+        self.suite = Path(__file__).resolve().parents[1]
+        self.source, self.project = self.base / "source", self.base / "target"
+        for project in (self.source, self.project):
+            (project / ".ai-project").mkdir(parents=True)
+            atomic_json(project / ".ai-project/read-policy.json", {"schemaVersion": "1.0", "confirmed": True, "projectRoot": str(project), "mode": "complete", "allow": ["**"], "deny": [], "scopeDescription": "synthetic migration resume fixture"})
+        (self.source / "ViewController.m").write_text("@implementation ViewController\n@end\n")
+        (self.project / "AppScope").mkdir()
+        (self.project / "AppScope/app.json5").write_text('{"bundleName":"com.example.fixture"}')
+        (self.project / "build-profile.json5").write_text('{"products":[{"name":"default"}]}')
+        self.command = [sys.executable, "-B", str(self.suite / "frameworks/ios-to-harmony-migrator-v2/scripts/start_migration.py"), str(self.source), str(self.project)]
+
+    def invoke(self):
+        """执行真实 CLI，测试实际复制、审计及首次控制写入前的拒绝路径。"""
+        source_before = {p.relative_to(self.source).as_posix(): p.read_bytes() for p in self.source.rglob("*") if p.is_file()}
+        result = subprocess.run(self.command, capture_output=True, text=True)
+        self.assertEqual({p.relative_to(self.source).as_posix(): p.read_bytes() for p in self.source.rglob("*") if p.is_file()}, source_before)
+        return result
+
+    def install(self):
+        """首装成功后才加入历史任务，避免用伪造清单掩盖安装链缺陷。"""
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "new")
+
+    def files(self):
+        """比较全部合成目标文件原字节；安装锁仅为预期的锁元数据通道。"""
+        return {p.relative_to(self.project).as_posix(): p.read_bytes() for p in self.project.rglob("*") if p.is_file() and p.name not in {"tasks.lock", "framework-update.lock"}}
+
+    def task(self, protocol="2", status="closed", task_id="historical"):
+        """产生完整且归属明确的 schema1/2 历史夹具；不表示真实业务验收。"""
+        from task_runtime import observe_identity, stable_identity, DIMENSIONS
+        from read_boundary import ReadBoundary
+        identity = observe_identity(self.project, "harmonyos", {"module": "entry", "buildMode": "debug"})
+        state = {"schemaVersion": "1.0", "taskId": task_id, "status": status, "identity": identity, "baseline": {}, "checkpoint": {}, "allowedFiles": ["entry/Index.ets"], "readCoverage": ReadBoundary(self.project).coverage(), "baseRevision": "synthetic", "protectedGlobs": [], "owner": "synthetic-review", "request": "migration history fixture", "completed": [], "todo": [], "blockers": [], "nextAction": "synthetic", "updatedAt": "2026-11-06T00:00:00+00:00", "completion": {name: "not-run" for name in DIMENSIONS}}
+        if protocol == "2":
+            state.update(schemaVersion="2.0", taskProtocolVersion="2", generation=1, stableIdentity=stable_identity(identity, self.project), acceptedContext=identity, acceptedRevision="synthetic")
+        path = self.project / ".ai-project/tasks" / task_id / "state.json"
+        atomic_json(path, state)
+        (path.parent / "handoff.md").write_text("synthetic historical handoff\n")
+        (path.parent / "baseline.json").write_text('{"syntheticHistoricalEvidence":true}\n')
+        (path.parent / "compiled.json").write_text('{"status":"historical-test-fixture-only"}\n')
+        return path
+
+    def assert_rejected_unchanged(self):
+        """拒绝必须早于任何迁移控制/发现写入，并保留全部任务和证据。"""
+        before = self.files()
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.files(), before)
+        return result
+
+    def test_terminal_tasks_resume_without_changing_history(self):
+        """两种已知格式的 closed/cancelled 可混合保留，恢复不修改任务或受管规则。"""
+        self.install()
+        for protocol in ("2", "legacy"):
+            for status in ("closed", "cancelled"):
+                with self.subTest(protocol=protocol, status=status):
+                    self.task(protocol, status, protocol + "-" + status)
+                    before = self.files()
+                    result = self.invoke()
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(json.loads(result.stdout)["status"], "resume")
+                    after = self.files()
+                    for name, content in before.items():
+                        if name.startswith(".ai-project/tasks/") or name == ".ai-project/framework-installation.json" or name in dict(MANAGED_MAPPINGS["ios-to-harmony-migrator-v2"]):
+                            self.assertEqual(after[name], content)
+
+    def test_nonterminal_ownership_blocks_resume_for_both_protocols(self):
+        """active、blocked、waiting-permission 均保留所有权，旧格式不自动豁免。"""
+        self.install()
+        for protocol in ("2", "legacy"):
+            for status in ("active", "blocked", "waiting-permission"):
+                with self.subTest(protocol=protocol, status=status):
+                    self.task(protocol, status)
+                    self.assert_rejected_unchanged()
+
+    def test_terminal_execution_lease_still_blocks_resume(self):
+        """终态仍有执行租约不能初始化共享控制中心，也不能顺手清除租约。"""
+        self.install()
+        for protocol in ("2", "legacy"):
+            for status in ("closed", "cancelled"):
+                with self.subTest(protocol=protocol, status=status):
+                    path = self.task(protocol, status)
+                    state = json.loads(path.read_text())
+                    state["pendingExecutions"] = {"synthetic": {"runnerPid": 1, "generation": 1}}
+                    atomic_json(path, state)
+                    self.assert_rejected_unchanged()
+
+    def test_mixed_terminal_and_nonterminal_tasks_keep_ownership(self):
+        """有合法历史不代表其他任务已经终结；任何活动记录都必须阻断。"""
+        self.install()
+        self.task("legacy", "closed", "old-closed")
+        self.task("2", "cancelled", "new-cancelled")
+        self.task("legacy", "waiting-permission", "still-owned")
+        self.assert_rejected_unchanged()
+
+    def test_different_source_or_target_is_rejected_before_discovery_writes(self):
+        """另一源或配置中的另一目标均不得在拒绝前污染已绑定的发现证据。"""
+        self.install()
+        another_source = self.base / "another-source"
+        (another_source / ".ai-project").mkdir(parents=True)
+        atomic_json(another_source / ".ai-project/read-policy.json", {"schemaVersion": "1.0", "confirmed": True, "projectRoot": str(another_source), "mode": "complete", "allow": ["**"], "deny": [], "scopeDescription": "synthetic distinct source"})
+        (another_source / "OtherController.m").write_text("@implementation OtherController\n@end\n")
+        original = self.command[:]
+        self.command[-2] = str(another_source)
+        self.assert_rejected_unchanged()
+        self.command = original
+        config = self.project / ".migration-v2/project.json"
+        original_config = config.read_bytes()
+        data = json.loads(original_config); data["targetRoot"] = str(self.base / "another-target"); atomic_json(config, data)
+        self.assert_rejected_unchanged()
+        config.unlink()
+        self.assert_rejected_unchanged()
+        config.write_text("{broken-json")
+        self.assert_rejected_unchanged()
+        config.write_text("null")
+        self.assert_rejected_unchanged()
+
+    def test_confirmed_artifact_review_remains_required_and_drift_sensitive(self):
+        """已审材料与合法终态可共存；审查漂移或新权威 state 均不能被忽略。"""
+        self.install()
+        self.task("legacy", "closed")
+        directory = self.project / ".ai-project/tasks/notes"
+        directory.mkdir(); attachment = directory / "handoff.md"; attachment.write_text("synthetic manual notes")
+        self.assert_rejected_unchanged()
+        review = review_artifacts(self.project, ["notes"])
+        review.update(confirmed=True, reviewedBy="synthetic-reviewer", authorizationSource="synthetic explicit review")
+        manifest_path = self.project / ".ai-project/framework-installation.json"
+        manifest = json.loads(manifest_path.read_text()); manifest["legacyArtifactReview"] = review; atomic_json(manifest_path, manifest)
+        before = self.files(); result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(attachment.read_bytes(), before[attachment.relative_to(self.project).as_posix()])
+        attachment.write_text("changed after review")
+        self.assert_rejected_unchanged()
+        review = review_artifacts(self.project, ["notes"])
+        review.update(confirmed=True, reviewedBy="synthetic-reviewer", authorizationSource="synthetic explicit re-review")
+        manifest["legacyArtifactReview"] = review; atomic_json(manifest_path, manifest)
+        self.task("2", "closed", "notes")
+        self.assert_rejected_unchanged()
+
+    def test_unknown_or_partial_state_never_disappears_as_terminal_history(self):
+        """终态标签不能掩盖未知 schema、损坏租约、归属不符或部分任务。"""
+        self.install()
+        changes = [lambda s: s.pop("schemaVersion"), lambda s: s.update(schemaVersion="future"), lambda s: s.update(status="done"), lambda s: s.pop("acceptedContext"), lambda s: s.pop("owner"), lambda s: s.update(pendingExecutions=[]), lambda s: s["identity"].update(projectRoot=str(self.source))]
+        for index, change in enumerate(changes):
+            with self.subTest(invalid=index):
+                path = self.task()
+                state = json.loads(path.read_text()); change(state); atomic_json(path, state)
+                self.assert_rejected_unchanged()
+        path = self.task("legacy"); state = json.loads(path.read_text()); state.pop("schemaVersion"); atomic_json(path, state)
+        self.assert_rejected_unchanged()
+        path.write_text("{broken-json")
+        self.assert_rejected_unchanged()
+        path.unlink(); (path.parent / "baseline.json").write_text("{}")
+        self.assert_rejected_unchanged()
+
+    def test_daily_installations_are_rejected_before_migration_writes(self):
+        """实际 iOS/HarmonyOS 日常首装不能被迁移 resume 当作完整迁移安装复用。"""
+        for framework in ("ios-daily-development-rules", "harmonyos-daily-development-rules"):
+            with self.subTest(framework=framework), tempfile.TemporaryDirectory(dir=self.base) as folder:
+                target = Path(folder).resolve()
+                (target / ".ai-project").mkdir()
+                atomic_json(target / ".ai-project/read-policy.json", {"schemaVersion": "1.0", "confirmed": True, "projectRoot": str(target), "mode": "complete", "allow": ["**"], "deny": [], "scopeDescription": "synthetic cross-framework fixture"})
+                result = subprocess.run([str(self.suite / "frameworks" / framework / "setup-project.sh"), str(target)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                previous_project, previous_command = self.project, self.command
+                self.project = target; self.command = self.command[:-1] + [str(target)]
+                try:
+                    self.assert_rejected_unchanged()
+                    self.assertFalse((target / ".migration-v2").exists())
+                    self.assertFalse((target / ".migration-workspace-v2").exists())
+                finally:
+                    self.project, self.command = previous_project, previous_command
+
+    def test_missing_drifted_or_partial_migration_installation_is_not_repaired_by_resume(self):
+        """正确框架也必须完整、无漂移；resume 不能复制规则或重登记清单补洞。"""
+        self.install()
+        for relative in (".codex-rules/_shared/task_runtime.py", ".migration-v2/references/code-quality-contract.md"):
+            with self.subTest(missing=relative):
+                path = self.project / relative; content = path.read_bytes(); path.unlink()
+                self.assert_rejected_unchanged(); path.write_bytes(content)
+        path = self.project / ".migration-v2/references/code-quality-contract.md"
+        content = path.read_bytes(); path.write_text("synthetic user drift")
+        self.assert_rejected_unchanged(); path.write_bytes(content)
+        manifest_path = self.project / ".ai-project/framework-installation.json"
+        original = manifest_path.read_bytes(); manifest = json.loads(original)
+        manifest["managedFiles"].pop(); atomic_json(manifest_path, manifest)
+        self.assert_rejected_unchanged(); manifest_path.write_bytes(original)
+        manifest = json.loads(original); manifest.pop("taskProtocolVersion"); atomic_json(manifest_path, manifest)
+        self.assert_rejected_unchanged()
+
+    def test_legacy_terminal_tasks_without_installation_cannot_be_adopted_implicitly(self):
+        """无安装清单仍是首装门禁；合法历史终态不授权自动采用旧任务。"""
+        self.task("legacy", "closed")
+        self.assert_rejected_unchanged()
+        self.assertFalse((self.project / ".migration-v2").exists())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
