@@ -11,7 +11,7 @@ from contextlib import nullcontext
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'shared/task-routing'))
 from read_boundary import ReadBoundary, task_read_scope, task_only_scope, bootstrap_bytes, secure_fd, external_control_bytes
-from task_runtime import (check_scope, confirmed_identity, digest, match, project_lock,
+from task_runtime import (check_scope, task_identity, protocol_gate, validate_state, task_record, digest, match, project_lock,
                           read_json, task_dir, task_state_paths)
 from transactional_files import apply as apply_files, preview as preview_files, restore as restore_files
 
@@ -40,15 +40,18 @@ def inspect(project: Path, task_id: str, plan: dict) -> dict:
     if not all(isinstance(plan.get(k), str) and plan[k].strip() for k in ('reviewedBy', 'reviewNote')):
         raise ValueError('必须记录预先审查者及来源与已有改动核对说明；该记录不代替授权')
     directory = task_dir(project, task_id)
-    state = read_json(directory / 'state.json')
+    protocol_gate(project)
+    state = task_record(project, directory / 'state.json')
+    if state.get('pendingExecutions'):
+        raise ValueError('存在尚未确认退出的验证写入者，禁止受控回写')
     if state['status'] != 'active':
         raise ValueError('仅活动任务可进行受控回写')
-    if confirmed_identity(project) != state['identity']:
+    if task_identity(project, state) != state.get('acceptedContext'):
         raise ValueError('任务身份变化')
     for other_path in task_state_paths(project):
         if other_path.parent == directory or other_path.parent.name.startswith('.init-'):
             continue
-        other = read_json(other_path)
+        other = task_record(project, other_path, allow_legacy=True)
         if other['status'] not in {'closed', 'cancelled'} and set(other['allowedFiles']) & set(state['allowedFiles']):
             raise ValueError('任务所有权冲突')
     scoped = check_scope(project, state)
@@ -106,6 +109,7 @@ def controlled_write(project: Path, task_id: str, plan: dict, transaction: Path,
                 result = apply_files(plan, transaction)
                 # 若跨范围并发发生变化，立即拒绝；仅当无后续用户漂移时回滚。
                 state = read_json(task_dir(project, task_id) / 'state.json')
+                task_identity(project, state)
                 actual = check_scope(project, state)['current']
                 expected = dict(reviewed['currentSnapshot'])
                 for item in reviewed['files']:

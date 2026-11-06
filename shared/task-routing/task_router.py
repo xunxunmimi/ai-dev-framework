@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterable
 
-from task_runtime import atomic_json, lock, safe_path, task_dir, confirmed_identity, project_relative_paths, read_json, tree_snapshot
+from task_runtime import atomic_json, lock, safe_path, task_dir, confirmed_identity, task_identity, protocol_gate, project_lock, validate_state, task_record, project_relative_paths, read_json, tree_snapshot
 from read_boundary import ReadBoundary, task_read_scope
 from contextlib import nullcontext
 
@@ -391,9 +391,14 @@ def main() -> int:
                 relative = value.absolute().relative_to(project)
             setattr(args, option, project / relative)
     with task_read_scope(project, args.task_id) if args.task_id else nullcontext():
+        protocol_gate(project)
         if args.task_id:
             # 每任务独立槽位；任务已开始后禁止用 pre 重写不可变基线。
-            identity = confirmed_identity(project)
+            directory = task_dir(project, args.task_id)
+            state = task_record(project, directory / "state.json")
+            if state['status'] in {'closed', 'cancelled'}:
+                raise ValueError('终结任务不能再次写入路由上下文')
+            identity = task_identity(project, state)
             if args.platform not in {identity["platform"], "migration"}:
                 raise ValueError("路由 platform 与已确认项目身份冲突")
             directory = task_dir(project, args.task_id)
@@ -411,7 +416,8 @@ def main() -> int:
             if args.stage == "pre" and args.write_baseline and args.baseline and not args.dry_run:
                 # 新任务开始使用刚捕获的快照，绝不使用磁盘上遗留的上一任务基线。
                 baseline = snapshot(project)
-                with lock(args.baseline.with_suffix(".lock")):
+                with project_lock(project, '.ai-project/tasks.lock'):
+                    protocol_gate(project)
                     atomic_json(args.baseline, baseline)
         for output in (args.baseline if args.write_baseline else None, args.write_context):
             if output and not output.resolve().is_relative_to((project / ".ai-project").resolve()):
@@ -422,7 +428,12 @@ def main() -> int:
         context["platform"] = args.platform
         context["taskId"] = args.task_id
         if args.write_context and not args.dry_run:
-            with lock(args.write_context.with_suffix(".lock")):
+            with project_lock(project, '.ai-project/tasks.lock'):
+                if args.task_id:
+                    latest = task_record(project, directory / 'state.json')
+                    if latest != state or latest['status'] != 'active':
+                        raise ValueError('生成上下文期间任务变化，禁止终态回写')
+                    task_identity(project, latest)
                 atomic_json(args.write_context, context)
         print(json.dumps(context, ensure_ascii=False, indent=2))
         return 0

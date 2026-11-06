@@ -45,6 +45,23 @@ class ControlledTaskScenarios(unittest.TestCase):
             result=controlled.controlled_write(self.project,'pay',self.plan,self.tx,True,out['previewSha256'])
         self.assertEqual(result['status'],'applied-needs-review-and-checkpoint')
         self.assertTrue(all((self.project/n).read_text()=='// changed\n' for n in self.names))
+    def test_pending_execution_blocks_preview_and_stale_apply_without_writes(self):
+        """即使任务仍 active，未确认退出的验证也不能与受控源码回写并发。"""
+        old = self.preview()
+        state_path = task_dir(self.project, 'pay') / 'state.json'
+        saved = json.loads(state_path.read_text())
+        saved['pendingExecutions'] = {'synthetic-execution': {'startedAt': '2026-11-06T00:00:00+00:00'}}
+        atomic_json(state_path, saved)
+        before = state_path.read_bytes()
+        with mock.patch.object(controlled, 'apply_files', side_effect=AssertionError('must refuse before source write')):
+            with self.assertRaises(ValueError):
+                self.preview()
+            with self.assertRaises(ValueError):
+                controlled.controlled_write(self.project, 'pay', self.plan, self.tx, True, old['previewSha256'])
+        self.assertEqual(state_path.read_bytes(), before)
+        self.assertFalse(self.tx.exists())
+        self.assertTrue(all((self.project/name).read_text() == '// original\n' for name in self.names))
+
     def test_preview_stale_and_changed_checkpoint_are_rejected(self):
         old=self.preview();(self.project/self.names[0]).write_text('later change')
         with self.assertRaises(ValueError):controlled.controlled_write(self.project,'pay',self.plan,self.tx,True,old['previewSha256'])

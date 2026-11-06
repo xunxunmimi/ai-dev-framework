@@ -20,6 +20,7 @@ POLICY_PATH = '.ai-project/read-policy.json'
 # 单次调用/线程的任务范围，不自动选取“最近任务”，关闭后不会变成共享项目约束。
 _TASK_SCOPE = ContextVar('framework_task_read_scope', default=None)
 _TASK_ONLY = ContextVar('framework_task_only_scope', default=None)
+_TASK_METADATA = ContextVar('framework_task_metadata_scope', default=None)
 
 
 @contextmanager
@@ -44,6 +45,16 @@ def task_only_scope(root: Path, task_id: str, spec: dict | None = None):
         yield
     finally:
         _TASK_ONLY.reset(token)
+
+
+@contextmanager
+def task_metadata_scope(root: Path, task_id: str):
+    """仅终结/重放自身任务元数据；不延续终态业务或全局身份授权。"""
+    token = _TASK_METADATA.set((root.resolve(), task_id))
+    try:
+        yield
+    finally:
+        _TASK_METADATA.reset(token)
 
 
 def task_only_current(root: Path):
@@ -209,8 +220,9 @@ def _check_external_holds(project: Path) -> None:
 
 def _check_external_identity(project: Path, state: dict) -> None:
     """核对任务的项目身份与已确认 revision；受限范围不能伪造完整身份。"""
-    from task_runtime import confirmed_identity, git
-    if confirmed_identity(project) != state.get('identity') or (git(project, 'rev-parse', 'HEAD') or 'not-applicable') != state.get('baseRevision'):
+    from task_runtime import task_identity, protocol_gate
+    protocol_gate(project)
+    if task_identity(project, state) != state.get('acceptedContext'):
         raise BoundaryError('任务项目身份或 revision 已变化')
 
 
@@ -219,7 +231,8 @@ def issue_external_permit(project: Path, task_id: str, grant: dict) -> str:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', task_id or ''):
         raise BoundaryError('无效任务 ID')
     project = project.resolve(strict=True)
-    with task_read_scope(project, task_id):
+    from task_runtime import project_lock
+    with task_read_scope(project, task_id), project_lock(project, '.ai-project/tasks.lock'):
         boundary = ReadBoundary(project)
         state = boundary.read_json(f'.ai-project/tasks/{task_id}/state.json')
         if state.get('taskId') != task_id or state.get('status') != 'active':
@@ -389,12 +402,15 @@ class ReadBoundary:
             spec = validate_task_only(self.root, task_id, supplied if supplied is not None else stored)
             if saved_state is not None and (saved_state.get('taskId') != task_id or saved_state.get('readCoverage', {}).get('policySha256') != policy_digest(spec)):
                 raise BoundaryError('单任务策略与已发布基线不一致，禁止读取其声明文件')
-            if saved_state is not None and saved_state.get('status') in {'closed', 'cancelled'}:
+            metadata_only = _TASK_METADATA.get() == (self.root, task_id)
+            if saved_state is not None and saved_state.get('status') in {'closed', 'cancelled'} and not metadata_only:
                 raise BoundaryError('单任务已结束；授权不延续到后续任务')
             self.policy = {'schemaVersion':'1.0','confirmed':True,'projectRoot':str(self.root),'scopeKind':'task', 'taskId':task_id,
                            'mode':'partial','scopeDescription':spec['scopeDescription'], 'identityFiles':spec['identityFiles'], 'identityGitMode':'unverified',
                            'allow': sorted(set(spec['allowFiles'] + [f'.ai-project/tasks/{task_id}/**', '.ai-project/tasks.lock', '.ai-project/framework-installation.json', '.ai-project/protected-paths.json'])),
                            'deny': [name + '/**' for name in spec['denyDirectories']]}
+            if metadata_only:
+                self.policy['allow'] = [f'.ai-project/tasks/{task_id}/**', '.ai-project/tasks.lock', '.ai-project/framework-installation.json']
             self.allow = self._entries(self.policy['allow'])
             self.deny = self._entries(self.policy['deny'], empty=True)
             self.project_policy = dict(self.policy)

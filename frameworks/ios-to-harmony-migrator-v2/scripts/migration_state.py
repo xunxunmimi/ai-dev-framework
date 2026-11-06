@@ -16,7 +16,7 @@ for parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(shared))
         break
 from read_boundary import require_complete
-from task_runtime import atomic_json, binding, digest as content_digest, validate_report, lock
+from task_runtime import atomic_json, binding, digest as content_digest, validate_report, lock, protocol_gate, project_lock
 
 
 from check_discovery_gate import validate_workspace
@@ -115,6 +115,7 @@ def advance(workspace: Path, event: str, slice_id: str | None, evidence: Path | 
     """在前置证据成立后推进状态；失败不写状态，调用方持有迁移工作区锁。"""
     require_complete(workspace.parent)
     boundary = require_complete(workspace.parent)
+    protocol_gate(workspace.parent)
     require(boundary.exists(state_path(workspace).relative_to(workspace.parent).as_posix()), 'migration state missing; initialize explicitly first')
     current = boundary.read_json(state_path(workspace).relative_to(workspace.parent).as_posix())
     before = json.loads(json.dumps(current))
@@ -271,7 +272,7 @@ def main() -> int:
             print(json.dumps(boundary.read_json(state_path(workspace).relative_to(workspace.parent).as_posix()) if boundary.exists(state_path(workspace).relative_to(workspace.parent).as_posix()) else initial_state(), ensure_ascii=False, indent=2))
             return 0
         from contextlib import nullcontext
-        with nullcontext() if args.dry_run else lock(workspace / "state/transition.lock"):
+        with project_lock(workspace.parent, '.ai-project/tasks.lock') if not args.dry_run else nullcontext(), nullcontext() if args.dry_run else lock(workspace / "state/transition.lock"):
             state = advance(
             workspace,
             args.event,

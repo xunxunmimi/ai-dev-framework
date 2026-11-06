@@ -24,13 +24,6 @@ def render(source: Path, destination: Path, values: dict[str, str]) -> None:
     destination.write_text(text, encoding="utf-8")
 
 
-def copy_managed(source: Path, destination: Path, marker: str) -> None:
-    if destination.exists() and marker not in destination.read_text(encoding="utf-8"):
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
@@ -47,7 +40,24 @@ def main() -> int:
         raise SystemExit(f"iOS source does not exist: {source}")
     if nested(source, target):
         raise SystemExit("source and target cannot be equal or nested")
-    target.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(suite / "installers"))
+    from project_framework import installation_locks, installation_states, audit_project, manifest_protocol, read_manifest, require_fresh_installation
+    with installation_locks(target):
+        if installation_states(target):
+            raise SystemExit("existing tasks must be explicitly ended before migration initialization/resume writes")
+        installed = (target / ".ai-project/framework-installation.json").is_file()
+        if installed:
+            manifest_protocol(read_manifest(target))
+            audit = audit_project(target, suite)
+            if audit["installedTaskProtocolVersion"] != "2" or not audit["safeToUpdate"] or audit["updateAvailable"]:
+                raise SystemExit("existing migration rules require audit and explicit offline update; resume cannot install rules")
+        else:
+            require_fresh_installation(target)
+        return initialize(source, target, framework, suite, args, installed)
+
+
+def initialize(source: Path, target: Path, framework: Path, suite: Path, args, installed: bool) -> int:
+    """在安装双锁内初始化控制数据；既有规则只读，首装按完整受管清单复制。"""
     control = target / ".migration-v2"
     workspace = target / ".migration-workspace-v2"
     ai_project = target / ".ai-project"
@@ -57,11 +67,15 @@ def main() -> int:
         (workspace / name).mkdir(parents=True, exist_ok=True)
     discovery = prepare_discovery(source, workspace)
     quality_contract = control / "references/code-quality-contract.md"
-    copy_managed(
-        suite / "shared/code-quality/code-quality-contract.md",
-        quality_contract,
-        "<!-- ai-frameworks:managed-code-quality-contract -->",
-    )
+    from project_framework import MANAGED_MAPPINGS, record_manifest
+    mappings = MANAGED_MAPPINGS["ios-to-harmony-migrator-v2"]
+    if not installed:
+        for relative, source_relative in mappings:
+            destination = target / relative
+            if destination.exists():
+                raise SystemExit("existing unmanaged migration rule needs adopt/audit before setup: " + relative)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text((suite / source_relative).read_text(encoding="utf-8"), encoding="utf-8")
     project_file = control / "project.json"
     values = {
         "PROJECT_NAME": args.name or source.name,
@@ -149,15 +163,8 @@ def main() -> int:
     pointer = target / "AGENTS.md"
     if not pointer.exists():
         pointer.write_text((control / "AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8")
-    sys.path.insert(0, str(suite / "installers"))
-    from project_framework import record_manifest
-    record_manifest(
-        target,
-        suite,
-        "ios-to-harmony-migrator-v2",
-        lifecycle.get("state", "migration-active"),
-        [(".migration-v2/references/code-quality-contract.md", "shared/code-quality/code-quality-contract.md")],
-    )
+    if not installed:
+        record_manifest(target, suite, "ios-to-harmony-migrator-v2", lifecycle.get("state", "migration-active"), mappings)
     print(json.dumps({"status": mode, "control": str(control), "workspace": str(workspace)}, ensure_ascii=False))
     return 0
 
