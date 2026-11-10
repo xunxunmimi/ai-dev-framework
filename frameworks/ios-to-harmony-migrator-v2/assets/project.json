@@ -9,6 +9,12 @@
   "phase": "discovery",
   "stateFile": "{{WORKSPACE_ROOT}}/state/migration-state.json",
   "policies": {
+    "targetPlatform": {
+      "os": "HarmonyOS",
+      "version": "7",
+      "apiVersion": 26,
+      "source": "framework_default"
+    },
     "theme": "source_behavior",
     "standardDevice": "project_defined",
     "sourceReadOnly": true,

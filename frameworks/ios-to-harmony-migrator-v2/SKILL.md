@@ -9,6 +9,7 @@ Preserve observable product behavior while spending context and verification eff
 
 ## Start or resume
 
+- Target version: honor the user's specified HarmonyOS/API version; otherwise default to HarmonyOS 7 (API 26). Record the resolved choice in `project.json` under `policies.targetPlatform` before implementation, following [core-contract.md](references/core-contract.md). Preserve an existing confirmed choice on resume.
 - New project: run `python3 scripts/start_migration.py <ios-source> [harmony-target]` and follow the generated `task-context.json`.
 - Before any new HarmonyOS business implementation, complete the Phase 0 baseline described in [discovery-gate.md](references/discovery-gate.md), pass `scripts/check_discovery_gate.py`, generate a plan bound to its hashes, and obtain user approval through `scripts/plan_approval.py approve`. Do not bypass this gate with a partial inventory or an untracked assumption.
 - Existing V2 project: for an ambiguous or T2+ task, run `python3 scripts/classify_task.py --project <target> --request '<user request>' --stage pre --task-id <initialized-task-id> --write-context`, then read only `mustRead`. Clear T0/T1 tasks may be classified in memory without creating process files.
