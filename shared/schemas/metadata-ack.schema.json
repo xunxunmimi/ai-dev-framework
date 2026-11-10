@@ -17,11 +17,19 @@
       "type": "string"
     },
     "path": {
-      "type": "string"
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)[.]{1,2}(?:/|$))(?!.*//)(?!.*\\\\).+\\.xcworkspace/xcuserdata/[^/]+\\.xcuserdatad/UserInterfaceState\\.xcuserstate$"
     },
     "oldSha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "const": "absent"
+        }
+      ]
     },
     "newSha256": {
       "type": "string",
@@ -42,6 +50,17 @@
     "authorizationSource": {
       "type": "string",
       "minLength": 1
+    },
+    "baselineSha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "const": "absent"
+        }
+      ]
     }
   }
 }

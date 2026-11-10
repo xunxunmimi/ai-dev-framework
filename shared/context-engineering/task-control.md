@@ -36,7 +36,15 @@ python3 .codex-rules/_shared/task_runtime.py resume --project /绝对工程 --ta
 
 ## 2.6.1 精确元数据确认
 
-确认前仅预览：`task_runtime.py ack-metadata --project /项目 --task-id ID --file 相对路径 --old-sha256 旧值 --new-sha256 新值 --reason 用户确认原因 --confirmed-by 确认人 --authorization-source 授权来源`；审核输出中的 previewSha256，再加 `--apply --preview-sha256 该摘要` 才保存。确认人和来源是记录，不是身份认证。当前仅接受 Xcode `*.xcodeproj/project.xcworkspace/xcuserdata/*.xcuserdatad/UserInterfaceState.xcuserstate` 的精确文件。旧值必须匹配不可变 baseline.json 和 state 基线，新值必须匹配当前安全读取结果。其他非本任务变化一律拒绝，原 baseline 不变；记录任务、路径、旧/新摘要和原因，备份原状态后原子提交，旧 passed 标记 stale。再次变化会重新阻塞。备份在任务目录 metadata-confirmations；中断后先读 state.json 与备份，不盲目重放。dry-run 不取得写锁，仅供预览，apply 会重新核验。
+确认前仅预览：`task_runtime.py ack-metadata --project /项目 --task-id ID --file 相对路径 --old-sha256 旧值 --new-sha256 新值 --reason 用户确认原因 --confirmed-by 确认人 --authorization-source 授权来源`；审核输出中的 previewSha256，再加 `--apply --preview-sha256 该摘要` 才保存。确认人和来源是记录，不是身份认证。接受内层 `*.xcodeproj/project.xcworkspace/xcuserdata/*.xcuserdatad/UserInterfaceState.xcuserstate` 及外层 `*.xcworkspace/xcuserdata/*.xcuserdatad/UserInterfaceState.xcuserstate` 的单个规范路径。首轮旧值必须匹配不可变baseline；仅原基线无该路径时可显式用 `absent` 确认新建，删除不接受。续轮旧值必须等于上轮新摘要，历史逐轮保留，原baseline不变。文件再次变化、回到原值或新建后删除都会重新阻塞，不存在永久豁免。原UI被另一任务占用、凭据/链接/其他未授权源码变化、运行验证锁/租约均拒绝。合法其他任务的独立范围和已精确承接的配置仍按check_scope核对，不能广泛忽略untracked。新确认记录使用2.1状态格式，旧writer/installer拒绝；安装恢复不得降至只认识2.0的运行器。备份在任务目录metadata-confirmations，状态权威；中断先核状态再决定重放。
+
+PBX与UI已同时变化时使用 `migrate-task --action continue --file 精确PBX --metadata-file 精确UI --old-sha256 旧值 --new-sha256 新值`，其余操作ID/原因/确认来源/预览与apply参数同生命周期入口。一个原子状态提交同时记录明确的配置承接和UI确认，仍拒绝目标改变、其他未确认配置或源码变化。该动作只更新当前任务acceptedContext，不写全局identity；之后开始新任务仍需单独核对并明确更新全局身份，不能自动继承旧passed。
+
+## 代码交付与验收分离
+
+`complete-code` 使用生命周期预览/摘要/apply及明确授权，把已审查、已checkpoint的活动任务记录为closed并保存codeDelivery；只释放代码编辑范围，realDevice、其他验收维度和待办原样保留，旧报告只作历史。blocked/waiting-permission或legacy任务不会自动被当成完成，pendingExecutions和已持有verification.lock均阻止交付。后续修改不得重开旧任务，须新ID init。默认仍拒已有dirty同文件；如明确继承交付，可用 `init --from-delivery 原任务ID --confirmed-by 确认人 --authorization-source 精确交接来源`，仅同根/目标/context/revision/规则/读取范围、摘要未变的原交付范围子集允许接续，记录来源和初始摘要；新任务验证重新not-run。任务专用模式不允许跨任务继承。跨规则升级不自动承接旧交付，需独立审查。
+
+完整示例、16组必要测试与单项目离线升级/回退限制见套件 `docs/2.6.7-代码交付与精确元数据确认.md`。
 
 ## 协议 2 隔离候选
 

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from project_framework import MANAGED_MAPPINGS, audit_project, record_manifest, upgrade, restore, review_artifacts, artifact_inventory, installation_states, load_artifact_review
+from project_framework import MANAGED_MAPPINGS, audit_project, record_manifest, upgrade, restore, review_artifacts, artifact_inventory, installation_states, load_artifact_review, runtime_state_schemas
 from task_runtime import atomic_json, lock
 
 
@@ -287,6 +287,54 @@ class UpgradeScenarios(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(path.read_bytes(), before)
 
+
+    def test_metadata21_restore_rejects_older_runtime_even_for_closed_state(self):
+        """同为协议2不代表认识2.1；回到原UI摘要也不能把新确认链交给旧运行器。"""
+        transaction = Path(upgrade(self.project, self.suite, 'synthetic stopped')['transaction'])
+        target = self.project / self.mappings[0][0]
+        content = target.read_bytes()
+        for status in ('active', 'closed', 'cancelled'):
+            with self.subTest(status=status):
+                path = self.task(status=status)
+                task = json.loads(path.read_text())
+                entry = {'taskId': 'sample', 'path': 'App.xcworkspace/xcuserdata/synthetic.xcuserdatad/UserInterfaceState.xcuserstate', 'oldSha256': 'absent', 'baselineSha256': 'absent', 'newSha256': 'a' * 64, 'reason': 'synthetic explicit metadata decision', 'confirmedBy': 'reviewer', 'authorizationSource': 'synthetic approval', 'at': '2026-11-10T00:00:00+00:00'}
+                task.update(schemaVersion='2.1', metadataAckProtocol='2', metadataAcknowledgements=[entry], acknowledgedMetadata={entry['path']: entry})
+                atomic_json(path, task); before = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, '活动任务|2.1'):
+                    restore(self.project, transaction, 'synthetic stopped')
+                preview = audit_project(self.project, self.suite)
+                self.assertFalse(preview['safeToUpdate'])
+                self.assertEqual(preview['unsupportedTaskSchemaTasks'], ['sample'])
+                with self.assertRaisesRegex(ValueError, '活动任务|2.1'):
+                    upgrade(self.project, self.suite, 'synthetic stopped')
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(target.read_bytes(), content)
+
+    def test_schema21_appearing_after_audit_is_rejected_before_managed_writes(self):
+        """模拟不遵守锁的旧writer：审计后出现合法2.1终态也不能安装旧运行器。"""
+        from unittest import mock
+        import project_framework as installer
+        real_audit = installer.audit_project
+        original = (self.project / self.mappings[0][0]).read_bytes()
+        def changed_after_audit(*args, **kwargs):
+            """只在自有夹具注入新状态，不修改候选或真实项目。"""
+            result = real_audit(*args, **kwargs)
+            path = self.task(status='closed'); task = json.loads(path.read_text())
+            entry = {'taskId':'sample', 'path':'App.xcworkspace/xcuserdata/synthetic.xcuserdatad/UserInterfaceState.xcuserstate', 'oldSha256':'absent', 'newSha256':'b'*64, 'baselineSha256':'absent', 'reason':'synthetic', 'confirmedBy':'reviewer', 'authorizationSource':'synthetic approval', 'at':'2026-11-10T00:00:00+00:00'}
+            task.update(schemaVersion='2.1', metadataAckProtocol='2', metadataAcknowledgements=[entry], acknowledgedMetadata={entry['path']:entry}); atomic_json(path, task)
+            return result
+        with mock.patch.object(installer, 'audit_project', side_effect=changed_after_audit):
+            with self.assertRaisesRegex(ValueError, '首写前'):
+                upgrade(self.project, self.suite, 'synthetic stopped')
+        self.assertEqual((self.project / self.mappings[0][0]).read_bytes(), original)
+
+    def test_restore_schema_capability_requires_explicit_literal_declaration(self):
+        """解析声明不执行备份代码；旧无声明仅2.0，未知/重复声明不能冒充支持。"""
+        self.assertEqual(runtime_state_schemas('TASK_PROTOCOL = "2"\n'), {'2.0'})
+        self.assertEqual(runtime_state_schemas('SUPPORTED_STATE_SCHEMAS = ("2.0", "2.1")\n'), {'2.0', '2.1'})
+        for text in ('SUPPORTED_STATE_SCHEMAS = []', 'SUPPORTED_STATE_SCHEMAS = "2.1"', 'SUPPORTED_STATE_SCHEMAS = dangerous()', 'SUPPORTED_STATE_SCHEMAS = ("2.1",)\nSUPPORTED_STATE_SCHEMAS = ("2.0",)'):
+            with self.subTest(text=text), self.assertRaises((ValueError, TypeError)):
+                runtime_state_schemas(text)
 
     def test_terminal_pending_execution_blocks_upgrade_and_restore_without_state_change(self):
         """终结任务的执行租约继续阻断安装；停写文字不能解除执行，也不更改任务记录。"""

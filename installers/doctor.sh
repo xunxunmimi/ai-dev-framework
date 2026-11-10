@@ -36,12 +36,19 @@ python3 "$suite_dir/shared/task-routing/self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/runtime_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/read_boundary_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/task_scope_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/task_only_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/lifecycle_protocol_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/task_delivery_self_test.py" || status=1
 python3 "$suite_dir/frameworks/ios-to-harmony-migrator-v2/scripts/self_test.py" || status=1
 python3 "$suite_dir/frameworks/ios-daily-development-rules/scripts/self_test.py" || status=1
 python3 "$suite_dir/frameworks/harmonyos-daily-development-rules/scripts/self_test.py" || status=1
 python3 "$suite_dir/evals/scripts/self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/safety_regression.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/upgrade_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/controlled_task_write_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/optional_ui_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/safety_regression.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/routing_self_test.py" || status=1
 
 if [[ -f "${CODEX_HOME:-$HOME/.codex}/tools/lanhu-mcp/.env" ]]; then
   printf '%s\n' 'OK optional Lanhu MCP credential file exists (content not read).'

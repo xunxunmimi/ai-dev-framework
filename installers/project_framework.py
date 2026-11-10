@@ -490,6 +490,8 @@ def audit_project(project: Path, suite: Path, artifact_review: dict | None = Non
     active_tasks = [state["taskId"] for state in states if state.get("taskProtocolVersion") == TASK_PROTOCOL and state["status"] not in {"closed", "cancelled"}]
     # 终结状态不代表验证子进程已退出；遗留执行须通过独立 release-execution 流程解除。
     pending_tasks = [state["taskId"] for state in states if state.get("pendingExecutions")]
+    supported_schemas = runtime_state_schemas((suite / 'shared/task-routing/task_runtime.py').read_text(encoding='utf-8'))
+    unsupported_tasks = [state['taskId'] for state in states if state['schemaVersion'] != '1.0' and state['schemaVersion'] not in supported_schemas]
     return {
         "schemaVersion": "1.0",
         "project": str(project),
@@ -504,9 +506,11 @@ def audit_project(project: Path, suite: Path, artifact_review: dict | None = Non
         "legacyArtifactReviewSha256": digest(review) if review is not None else None,
         "activeProtocol2Tasks": active_tasks,
         "pendingExecutionTasks": pending_tasks,
+        "targetSupportedStateSchemas": sorted(supported_schemas),
+        "unsupportedTaskSchemaTasks": unsupported_tasks,
         "currentSuiteVersion": current_version,
         "updateAvailable": manifest.get("suiteVersion") != current_version or manifest.get("suiteSha256") != suite_digest(suite) or any(item["updateAvailable"] for item in files),
-        "safeToUpdate": not local_drift and not active_tasks and not pending_tasks,
+        "safeToUpdate": not local_drift and not active_tasks and not pending_tasks and not unsupported_tasks,
         "suiteContentChanged": manifest.get("suiteSha256") != suite_digest(suite),
         "localDrift": local_drift,
         "managedFiles": files,
@@ -522,6 +526,8 @@ def upgrade(project: Path, suite: Path, offline_ack: str = "", artifact_review: 
             raise ValueError("任务仍有活跃或遗留验证执行；先核实并显式 release-execution，停写声明不能越过: " + ",".join(audit["pendingExecutionTasks"]))
         if audit["activeProtocol2Tasks"]:
             raise ValueError("新协议活动任务必须先显式终结，不能在线更新规则: " + ",".join(audit["activeProtocol2Tasks"]))
+        if audit['unsupportedTaskSchemaTasks']:
+            raise ValueError('目标运行器不支持现有任务状态格式（包括2.1），不能通过update降级语义: ' + ','.join(audit['unsupportedTaskSchemaTasks']))
         if not audit["safeToUpdate"]:
             raise ValueError("Refusing to overwrite locally modified managed files")
         # 唯一事务目录防止连续升级覆盖前一次备份；只存受管文本和清单，不拷贝业务工程。
@@ -542,13 +548,31 @@ def upgrade(project: Path, suite: Path, offline_ack: str = "", artifact_review: 
         planned[str(MANIFEST_RELATIVE)] = json.dumps(future_manifest, ensure_ascii=False, indent=2) + "\n"
         record = {"projectRoot": str(project), "status": "applying", "before": before, "planned": planned, "createdAt": datetime.now(timezone.utc).isoformat(), "offlineWritersStoppedSource": offline_ack.strip(), "taskDataMigration": "not-performed", "legacyArtifactReview": audit["legacyArtifactReview"]}
         atomic_json(transaction / "transaction.json", record)
-        installation_states(project, audit["legacyArtifactReview"])  # 首次受管文件替换前，在双锁内再次核清单与新状态。
+        refreshed_states = installation_states(project, audit["legacyArtifactReview"])
+        planned_schemas = runtime_state_schemas(planned.get('.codex-rules/_shared/task_runtime.py'))
+        if any(state.get('pendingExecutions') or state.get('taskProtocolVersion') == TASK_PROTOCOL and state['status'] not in {'closed', 'cancelled'} or state['schemaVersion'] != '1.0' and state['schemaVersion'] not in planned_schemas for state in refreshed_states):
+            raise ValueError('首写前任务所有权/执行/格式变化；目标运行器不支持，未替换受管文件')
         for name, text in planned.items():
             atomic_text(safe_project_path(project, name), text)
         record["after"] = {name: project_text(project, name) for name in paths}
         record["status"] = "complete"
         atomic_json(transaction / "transaction.json", record)
         return {"status": "updated", "transaction": str(transaction), "version": suite_version(suite)}
+
+
+def runtime_state_schemas(text: str | None) -> set[str]:
+    """只解析目标运行器的静态格式声明；旧协议2无声明时仅支持2.0，不执行备份代码。"""
+    if text is None:
+        return set()
+    declarations = [node.value for node in ast.parse(text).body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'SUPPORTED_STATE_SCHEMAS' for target in node.targets)]
+    if not declarations:
+        return {'2.0'}
+    if len(declarations) != 1:
+        raise ValueError('目标运行器状态格式声明重复')
+    value = ast.literal_eval(declarations[0])
+    if not isinstance(value, (tuple, list)) or not value or any(not isinstance(item, str) for item in value):
+        raise ValueError('目标运行器状态格式声明无效')
+    return set(value)
 
 
 def restore(project: Path, transaction: Path, offline_ack: str = "", artifact_review: dict | None = None) -> dict:
@@ -571,6 +595,9 @@ def restore(project: Path, transaction: Path, offline_ack: str = "", artifact_re
         previous_protocol = manifest_protocol(json.loads(previous_text)) if previous_text else "legacy"
         if any(state.get("taskProtocolVersion") == TASK_PROTOCOL and (previous_protocol != TASK_PROTOCOL or state["status"] not in {"closed", "cancelled"}) for state in states):
             raise ValueError("安装恢复不能降级新协议任务或覆盖活动任务；任务数据回滚不属于安装 restore")
+        supported = runtime_state_schemas(record['before'].get('.codex-rules/_shared/task_runtime.py'))
+        if any(state.get('schemaVersion') == '2.1' and '2.1' not in supported for state in states):
+            raise ValueError('旧运行器不支持2.1连续元数据确认；即使任务已关闭，安装 restore 也不能降级任务语义')
         for name, before in record["before"].items():
             path = safe_project_path(project, name)
             current = project_text(project, name) if ReadBoundary(project).exists(name) else None
