@@ -26,6 +26,7 @@ SECRET_SUFFIXES = {".p12", ".pem", ".key", ".mobileprovision", ".cer"}
 PROTECTED = (".git/**", ".aws/**", ".ssh/**", ".gnupg/**", "Pods/**", "**/Pods/**", "Carthage/**", "**/Carthage/**", "vendor/**", "**/vendor/**", "oh_modules/**", "**/oh_modules/**", ".build/**", "**/*.xcframework/**", "**/*.framework/**")
 # 完成维度互相独立；提交与推送不能由编译成功推导。
 TASK_PROTOCOL = "2"  # 协议版本要求安装器与所有持久任务入口一致；旧进程必须离线停写。
+SUPPORTED_STATE_SCHEMAS = ("2.0", "2.1")  # 2.1 元数据确认链必须让不认识其语义的旧 writer/installer 失败关闭。
 TERMINAL = {"closed", "cancelled"}  # 释放未来写所有权；不推导任何验收维度通过。
 STATUSES = {"active", "waiting-permission", "blocked"} | TERMINAL
 
@@ -98,6 +99,13 @@ def task_scoped(function):
                 historical = task_record(root, task_dir(root, task_id) / 'state.json', allow_legacy=True)
                 if historical['status'] in TERMINAL:
                     return {**historical, 'historical': True}
+        if only and function.__name__ == 'lifecycle_transition' and (args[0] if args else kwargs.get('action')) == 'complete-code':
+            # 已交付任务仅可按原操作重放；先走自有元数据通道，不恢复旧业务读取授权。
+            with task_metadata_scope(root, task_id), task_read_scope(root, task_id):
+                protocol_gate(root)
+                historical = task_record(root, task_dir(root, task_id) / 'state.json', allow_legacy=True)
+                if historical['status'] in TERMINAL:
+                    return function(root, task, *args, **kwargs)
         metadata = task_metadata_scope(root, task_id) if function.__name__ == 'lifecycle_transition' and (args[0] if args else kwargs.get('action')) in {'cancel', 'release-execution'} and task_only_current(root) else contextlib.nullcontext()
         with metadata, task_read_scope(root, task_id, kwargs.get('read_policy')):
             protocol_gate(root)
@@ -183,6 +191,46 @@ def protocol_gate(root: Path) -> None:
                     raise ValueError('存在规则入口但缺安装清单；不能绕过安装协议')
 
 
+def validate_metadata_history(state: dict) -> None:
+    """仅在内存核验2.1完整逐路径摘要链；不读取文件、不补造历史或认证人工授权。"""
+    history, latest = state.get('metadataAcknowledgements'), state.get('acknowledgedMetadata')
+    if state.get('metadataAckProtocol') != '2' or not isinstance(history, list) or not history or not isinstance(latest, dict):
+        raise ValueError('连续元数据确认协议或历史不完整')
+    tails = {}
+    for entry in history:
+        if not isinstance(entry, dict) or entry.get('taskId') != state['taskId'] or not isinstance(entry.get('path'), str):
+            raise ValueError('元数据历史记录归属不完整')
+        name = entry['path']
+        if canonical_relative(name) != name or not re.fullmatch(r'.+\.xcworkspace/xcuserdata/[^/]+\.xcuserdatad/UserInterfaceState\.xcuserstate', name):
+            raise ValueError('元数据历史不是精确 UI 状态路径')
+        origin = state['baseline'].get(name, 'absent')
+        expected = tails[name]['newSha256'] if name in tails else origin
+        if entry.get('baselineSha256', entry.get('oldSha256')) != origin or entry.get('oldSha256') != expected or not isinstance(entry.get('newSha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', entry['newSha256']) or entry['newSha256'] == expected:
+            raise ValueError('元数据确认历史摘要断链或原始基线不符')
+        if any(not isinstance(entry.get(key), str) or not entry[key].strip() for key in ('reason', 'confirmedBy', 'authorizationSource', 'at')) or datetime.fromisoformat(entry['at'].replace('Z', '+00:00')).tzinfo is None:
+            raise ValueError('元数据确认历史缺少授权来源或带时区时间')
+        tails[name] = entry
+    if tails != latest:
+        raise ValueError('元数据确认历史末轮与当前确认记录不一致')
+
+
+def validate_delivery(state: dict) -> None:
+    """代码交付是完整、可追溯的范围声明；部分字段不能成为继承旧修改的授权来源。"""
+    delivery = state['codeDelivery']
+    if not isinstance(delivery, dict) or delivery.get('schemaVersion') != '1.0' or delivery.get('kind') != 'code-complete-awaiting-acceptance' or state['status'] != 'closed' or type(delivery.get('generation')) is not int or not 1 <= delivery['generation'] <= state.get('generation', 0):
+        raise ValueError('代码交付格式或生命周期不完整')
+    if not isinstance(delivery.get('operationId'), str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', delivery['operationId']) or any(not isinstance(delivery.get(key), str) or not delivery[key].strip() for key in ('reason', 'confirmedBy', 'authorizationSource', 'at')) or datetime.fromisoformat(delivery['at'].replace('Z', '+00:00')).tzinfo is None:
+        raise ValueError('代码交付缺少完整操作/授权/时间记录')
+    if delivery.get('snapshot') != {name: state['checkpoint'].get(name) for name in state['allowedFiles']} or not isinstance(delivery.get('rulesIdentity'), dict) or not delivery['rulesIdentity']:
+        raise ValueError('代码交付范围/摘要/规则不完整')
+    history = [entry for entry in state.get('lifecycleHistory', []) if isinstance(entry, dict) and entry.get('operationId') == delivery['operationId']]
+    if len(history) != 1 or history[0].get('request', {}).get('action') != 'complete-code' or history[0].get('result', {}).get('status') != 'code-delivered' or history[0]['result'].get('generation') != delivery['generation']:
+        raise ValueError('代码交付与生命周期原子记录不一致')
+    request = history[0]['request']
+    if delivery['at'] != history[0].get('at') or any(delivery[key] != request.get(key) for key in ('reason', 'confirmedBy', 'authorizationSource')):
+        raise ValueError('代码交付授权来源与原操作不一致')
+
+
 def validate_state(state: dict, allow_legacy: bool = False) -> dict:
     """未知/部分任务格式失败关闭；旧记录仍参与冲突，但须显式迁移才能继续。"""
     required = {'taskId', 'identity', 'baseRevision', 'allowedFiles', 'baseline', 'checkpoint', 'status', 'completion', 'readCoverage', 'owner', 'request', 'completed', 'todo', 'blockers', 'nextAction', 'updatedAt'}
@@ -210,8 +258,18 @@ def validate_state(state: dict, allow_legacy: bool = False) -> dict:
     if state.get('schemaVersion') == '1.0' and 'taskProtocolVersion' not in state:
         if not allow_legacy and state['status'] not in TERMINAL:
             raise ValueError('旧任务须显式 migrate-task continue/cancel；禁止自动换身份')
-    elif state.get('schemaVersion') != '2.0' or state.get('taskProtocolVersion') != TASK_PROTOCOL or type(state.get('generation')) is not int or state['generation'] < 1 or not all(isinstance(state.get(key), dict) for key in ('stableIdentity', 'acceptedContext')) or not isinstance(state.get('acceptedRevision'), str) or not {'projectRoot', 'device', 'inode', 'repositoryRoot', 'repositoryId', 'platform', 'target'}.issubset(state['stableIdentity']) or not {'projectRoot', 'repositoryRoot', 'repositoryId', 'platform', 'fields', 'configSha256', 'readCoverage'}.issubset(state['acceptedContext']):
+    elif state.get('schemaVersion') not in SUPPORTED_STATE_SCHEMAS or state.get('taskProtocolVersion') != TASK_PROTOCOL or type(state.get('generation')) is not int or state['generation'] < 1 or not all(isinstance(state.get(key), dict) for key in ('stableIdentity', 'acceptedContext')) or not isinstance(state.get('acceptedRevision'), str) or not {'projectRoot', 'device', 'inode', 'repositoryRoot', 'repositoryId', 'platform', 'target'}.issubset(state['stableIdentity']) or not {'projectRoot', 'repositoryRoot', 'repositoryId', 'platform', 'fields', 'configSha256', 'readCoverage'}.issubset(state['acceptedContext']):
         raise ValueError('任务协议未知或部分升级，禁止写入')
+    if state.get('schemaVersion') == '2.1':
+        validate_metadata_history(state)
+    elif 'metadataAckProtocol' in state or 'metadataAcknowledgements' in state:
+        raise ValueError('连续元数据确认必须使用明确2.1状态格式，不能降级伪装旧记录')
+    if 'codeDelivery' in state:
+        validate_delivery(state)
+    if 'predecessorDelivery' in state:
+        predecessor = state['predecessorDelivery']
+        if not isinstance(predecessor, dict) or not isinstance(predecessor.get('taskId'), str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', predecessor['taskId']) or any(not isinstance(predecessor.get(key), str) or not predecessor[key].strip() for key in ('confirmedBy', 'authorizationSource')) or any(not isinstance(predecessor.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', predecessor[key]) for key in ('stateSha256', 'deliverySha256')) or predecessor.get('snapshot') != {name: state['baseline'].get(name) for name in state['allowedFiles']}:
+            raise ValueError('关联交付的来源、授权或初始摘要不完整')
     return state
 
 
@@ -280,6 +338,22 @@ def save_state(directory: Path, state: dict) -> str:
         return 'updated'
     except OSError:
         return 'stale-rebuild-from-state'
+
+
+def require_verification_idle(root: Path, task_id: str) -> None:
+    """只探测已存在的验证锁；不创建预览文件，锁存在且被持有时不能交出范围。"""
+    relative = ReadBoundary(root).require(f'.ai-project/tasks/{task_id}/verification.lock')
+    try:
+        descriptor = secure_fd(root, relative)
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError('验证锁仍被其他runner持有；不能释放范围或确认元数据') from error
+    finally:
+        os.close(descriptor)
 
 
 def atomic_json(path: Path, value: object) -> None:
@@ -543,7 +617,7 @@ def match(path: str, patterns: list | tuple) -> bool:
 
 
 @task_scoped
-def begin(root: Path, task_id: str, files: list[str], request: str, owner: str = "user-session", protected: list | None = None, read_policy: dict | None = None) -> dict:
+def begin(root: Path, task_id: str, files: list[str], request: str, owner: str = "user-session", protected: list | None = None, read_policy: dict | None = None, from_delivery: str | None = None, confirmed_by: str = '', authorization_source: str = '') -> dict:
     """开始新任务并保留不可变基线。
 
     root 为项目根，task_id 为唯一任务 ID，files 为允许编辑的相对文件，request 为需求；
@@ -555,6 +629,8 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
     directory = task_dir(root, task_id)
     files = sorted({ReadBoundary(root).require(name) for name in files})
     only = task_only_current(root)
+    if from_delivery and only:
+        raise BoundaryError('任务专用范围不能继承另一任务的代码交付；请先单独核对授权范围')
     if only and files != sorted(ReadBoundary(root).task_policy['editableFiles']):
         raise ValueError('任务编辑文件与用户确认的精确范围不一致')
     if not files:
@@ -590,6 +666,24 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
                         pass
         captured = capture_snapshot(root)
         baseline = captured["paths"]
+        predecessor = None
+        inherited = set()
+        if from_delivery:
+            if not confirmed_by.strip() or not authorization_source.strip():
+                raise ValueError('继承代码交付须明确确认人和授权来源；释放本身不授权继续修改')
+            previous = task_record(root, task_dir(root, from_delivery) / 'state.json')
+            delivery = previous.get('codeDelivery')
+            if previous['status'] != 'closed' or previous.get('pendingExecutions') or not isinstance(delivery, dict) or delivery.get('schemaVersion') != '1.0' or delivery.get('kind') != 'code-complete-awaiting-acceptance' or delivery.get('generation') != previous['generation'] or delivery.get('snapshot') != {name: previous['checkpoint'].get(name) for name in previous['allowedFiles']}:
+                raise ValueError('原任务不是可核对的代码交付，不能继承旧修改')
+            task_identity(root, previous)
+            if delivery.get('rulesIdentity') != rules_identity(root) or previous['readCoverage'] != captured['coverage'] or not set(files).issubset(previous['allowedFiles']):
+                raise ValueError('交付关联不能扩大编辑或读取范围')
+            blocked = sorted(set(blocked) | set(previous['protectedGlobs']))
+            for name in files:
+                if baseline.get(name) != delivery['snapshot'].get(name):
+                    raise ValueError('交付后源码摘要变化；禁止继承或重设原冻结基线')
+            inherited = set(files)
+            predecessor = {'taskId': from_delivery, 'stateSha256': digest(previous), 'deliverySha256': digest(delivery), 'snapshot': {name: baseline.get(name) for name in files}, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source}
         dirty = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
         chunks = dirty.split("\0")
         dirty_names, position = [], 0
@@ -604,9 +698,11 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
                     dirty_names.append(chunks[position])
                     position += 1
         dirty_names = project_relative_paths(root, dirty_names)
-        if set(files).intersection(dirty_names):
+        if set(files).intersection(dirty_names) - inherited:
             raise ValueError("允许编辑文件已有用户修改；请先人工确认边界，不能把整文件归入新任务")
         state = {"schemaVersion": "2.0", "taskProtocolVersion": TASK_PROTOCOL, "generation": 1, "stableIdentity": stable_identity(identity, root), "acceptedContext": identity, "acceptedRevision": current_revision(root), "taskId": task_id, "owner": owner, "identity": identity, "baseRevision": (git(root, "rev-parse", "HEAD") or "not-applicable") if boundary.policy["mode"] == "complete" else "unverified-read-scope", "request": request, "allowedFiles": files, "protectedGlobs": blocked, "baseline": baseline, "readCoverage": captured["coverage"], "checkpoint": baseline, "baselineDirtyStatus": dirty_names, "baselineDirtyStatusVerified": boundary.policy["mode"] == "complete", "status": "active", "completed": [], "todo": [], "blockers": [], "nextAction": "实现声明的最小任务范围", "completion": {name: "waiting-user" if name == "realDevice" else "not-run" for name in DIMENSIONS}, "updatedAt": now()}
+        if predecessor:
+            state['predecessorDelivery'] = predecessor
         # 先完整生成未发布目录，再原子发布；断线不会留下“有 baseline 无 state”的任务。
         directory.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=".init-", dir=directory.parent))
@@ -620,6 +716,10 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
             write_handoff(staging, state)
             if confirmed_identity(root) != identity or current_revision(root) != state['acceptedRevision']:
                 raise ValueError('初始化快照期间身份/revision变化，未发布任务')
+            if predecessor:
+                refreshed = tree_snapshot(root)
+                if digest(task_record(root, task_dir(root, from_delivery) / 'state.json')) != predecessor['stateSha256'] or any(refreshed.get(name) != baseline.get(name) for name in files):
+                    raise ValueError('关联交付或源码在初始化期间变化，未发布任务')
             os.replace(staging, directory)
             fsync_directory(directory.parent)
         finally:
@@ -638,7 +738,8 @@ def check_scope(root: Path, state: dict) -> dict:
     if state.get('readCoverage') != ReadBoundary(root).coverage():
         raise ValueError('项目或任务读取范围已变化，旧基线失效；禁止自动扩大范围恢复')
     current = tree_snapshot(root)
-    changed = sorted(name for name in set(current) | set(state["baseline"]) if current.get(name) != state["baseline"].get(name))
+    acknowledged = {**state.get('acknowledgedMetadata', {}), **state.get('acknowledgedContext', {})}
+    changed = sorted(name for name in set(current) | set(state["baseline"]) | set(acknowledged) if current.get(name) != state["baseline"].get(name) or name in acknowledged and current.get(name) != acknowledged[name].get('newSha256'))
     # 其他任务的文件允许保持独立变化；本任务只声明自己的改动，保护范围全局检查。
     forbidden = [name for name in changed if match(name, state["protectedGlobs"])]
     if forbidden:
@@ -653,45 +754,93 @@ def check_scope(root: Path, state: dict) -> dict:
             for name in other["allowedFiles"]:
                 if other["status"] not in {"closed", "cancelled"} or current.get(name) == other["checkpoint"].get(name):
                     other_files.add(name)
-    acknowledged = {**state.get('acknowledgedMetadata', {}), **state.get('acknowledgedContext', {})}
-    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and not (name in acknowledged and state['baseline'].get(name) == acknowledged[name].get('oldSha256') and current.get(name) == acknowledged[name].get('newSha256'))]
+    def acknowledged_change(name: str) -> bool:
+        """每轮确认仍锚定原基线；仅当前摘要等于该路径最后一次精确确认才排除。"""
+        if name not in acknowledged:
+            return False
+        entry = acknowledged[name]
+        origin = entry.get('baselineSha256', entry.get('oldSha256'))
+        original_matches = state['baseline'].get(name) == origin or name not in state['baseline'] and origin == 'absent'
+        return original_matches and current.get(name) == entry.get('newSha256')
+    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and not acknowledged_change(name)]
     if unexpected:
         raise ValueError(f"范围外或原有用户文件发生变化，暂停人工核对: {unexpected}")
     return {"changedFiles": [name for name in changed if name in state["allowedFiles"]], "current": current, "coverage": ReadBoundary(root).coverage()}
+
+
+def prepare_metadata_ack(root: Path, state: dict, path: str, old_hash: str, new_hash: str, reason: str, confirmed_by: str, authorization_source: str) -> tuple[dict, dict]:
+    """逐项准备精确 UI 元数据确认；只复制状态，不承认身份、不检查全局范围或写入。
+
+    首轮 old_hash 必须为原始摘要（新建为 absent），续轮必须为上轮新摘要；
+    baselineSha256 始终锚定原基线，历史列表保留每轮记录，不接受删除或跳轮。
+    调用者须在同一事务中核身份、范围、状态与预览，再决定是否持久保存 proposed。
+    """
+    root = root.resolve()
+    if not isinstance(path, str) or canonical_relative(path) != path or not re.fullmatch(r'.+\.xcworkspace/xcuserdata/[^/]+\.xcuserdatad/UserInterfaceState\.xcuserstate', path):
+        raise ValueError('仅允许规范精确的 Xcode workspace UserInterfaceState 路径')
+    if any(not isinstance(value, str) or not value.strip() for value in (reason, confirmed_by, authorization_source)) or not isinstance(old_hash, str) or not isinstance(new_hash, str) or (old_hash != 'absent' and not re.fullmatch(r'[0-9a-f]{64}', old_hash)) or not re.fullmatch(r'[0-9a-f]{64}', new_hash) or old_hash == new_hash:
+        raise ValueError('必须提供原因、确认人、授权来源及不同的完整旧/新 SHA256；新建旧值须显式 absent')
+    if path in state['allowedFiles'] or match(path, state['protectedGlobs']):
+        raise ValueError('不能确认业务编辑范围或受保护路径')
+    directory = task_dir(root, state['taskId'])
+    # 元数据确认不是抢占另一任务的写所有权；其他不同文件的合法owner仍由check_scope处理。
+    for state_path in task_state_paths(root):
+        if state_path.parent == directory or state_path.parent.name.startswith('.init-'):
+            continue
+        other = task_record(root, state_path, allow_legacy=True)
+        if (other['status'] not in TERMINAL or other.get('pendingExecutions')) and path in other['allowedFiles']:
+            raise ValueError('精确元数据路径仍被另一任务或遗留执行占用，不能确认接管')
+    original = read_json(directory / 'baseline.json')
+    if original.get('taskId') != state['taskId'] or original.get('paths') != state['baseline'] or original.get('identity') != state['identity']:
+        raise ValueError('原始基线与任务状态不一致')
+    # 基线锚点与上一轮值分开，后续确认不能把新值偷偷写成原始基线。
+    baseline_hash = original['paths'][path] if path in original['paths'] else 'absent'
+    acknowledged = state.get('acknowledgedMetadata', {})
+    if not isinstance(acknowledged, dict):
+        raise ValueError('元数据精确确认不是路径记录映射')
+    previous = acknowledged.get(path)
+    history = state.get('metadataAcknowledgements', [])
+    if not isinstance(history, list) or any(not isinstance(item, dict) or not isinstance(item.get('path'), str) or item.get('taskId') != state['taskId'] for item in history):
+        raise ValueError('元数据确认历史不是完整的本任务路径记录列表')
+    # 旧版只有map时原样补齐所有旧轮；格式校验复用读状态时的同一个纯函数。
+    proposed = json.loads(json.dumps(state))
+    represented = {item['path'] for item in history}
+    for known_path, latest in acknowledged.items():
+        if known_path not in represented:
+            proposed.setdefault('metadataAcknowledgements', []).append(json.loads(json.dumps(latest)))
+    proposed.update(schemaVersion='2.1', metadataAckProtocol='2')
+    if acknowledged or history:
+        validate_metadata_history(proposed)
+    if previous is None:
+        if old_hash != baseline_hash:
+            raise ValueError('首次旧摘要或 absent 声明与不可变基线不一致')
+    elif previous['newSha256'] != old_hash:
+        raise ValueError('续轮旧摘要必须匹配上一轮新摘要')
+    actual = hashlib.sha256(ReadBoundary(root).read_bytes(path)).hexdigest()
+    if actual != new_hash:
+        raise ValueError('当前文件摘要与确认值不一致；不能以 absent 确认删除')
+    entry = {'oldSha256': old_hash, 'baselineSha256': baseline_hash, 'newSha256': new_hash, 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'taskId': state['taskId'], 'path': path, 'at': now()}
+    proposed.setdefault('metadataAcknowledgements', []).append(entry)
+    proposed.setdefault('acknowledgedMetadata', {})[path] = entry
+    validate_metadata_history(proposed)
+    return proposed, entry
 
 
 @task_scoped
 def acknowledge_metadata(root: Path, task_id: str, path: str, old_hash: str, new_hash: str, reason: str, apply: bool = False, preview_hash: str | None = None, confirmed_by: str = '', authorization_source: str = '') -> dict:
     """确认精确 Xcode UI 元数据；保留原始基线，拒绝任何额外越界变化。"""
     root = root.resolve()
-    if not re.fullmatch(r'.+\.xcodeproj/project\.xcworkspace/xcuserdata/[^/]+\.xcuserdatad/UserInterfaceState\.xcuserstate', path):
-        raise ValueError('仅允许精确的 Xcode UserInterfaceState 路径')
-    if not reason.strip() or not confirmed_by.strip() or not authorization_source.strip() or not all(re.fullmatch(r'[0-9a-f]{64}', value or '') for value in (old_hash, new_hash)) or old_hash == new_hash:
-        raise ValueError('必须提供原因、确认人、授权来源及不同的完整旧/新 SHA256')
     directory = task_dir(root, task_id)
     with project_lock(root, '.ai-project/tasks.lock') if apply else contextlib.nullcontext():
         state = task_record(root, directory / 'state.json')
+        if state.get('pendingExecutions'):
+            raise ValueError('仍有活跃或遗留验证执行；不能确认元数据或清除执行租约')
+        # 旧writer可能尚未登记lease；只探测已存在的锁，不能为只读预览创建占用文件。
+        require_verification_idle(root, task_id)
         if state['status'] in {'closed', 'cancelled'} or task_identity(root, state) != state.get('acceptedContext', state['identity']):
             raise ValueError('任务已结束或项目身份变化')
-        if path in state['allowedFiles'] or match(path, state['protectedGlobs']):
-            raise ValueError('不能确认业务编辑范围或受保护路径')
-        original = read_json(directory / 'baseline.json')
-        if original.get('taskId') != task_id or original.get('paths') != state['baseline'] or original.get('identity') != state['identity']:
-            raise ValueError('原始基线与任务状态不一致')
-        if state['baseline'].get(path) != old_hash:
-            raise ValueError('旧摘要与不可变基线不一致')
-        actual = hashlib.sha256(ReadBoundary(root).read_bytes(path)).hexdigest()
-        if actual != new_hash:
-            raise ValueError('当前文件摘要与确认值不一致')
-        if path in state.get('acknowledgedMetadata', {}):
-            raise ValueError('该路径已有确认记录；不得覆盖或重复确认')
-        proposed = json.loads(json.dumps(state))
-        entry = {'oldSha256': old_hash, 'newSha256': new_hash, 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'taskId': task_id, 'path': path, 'at': now()}
-        proposed.setdefault('acknowledgedMetadata', {})[path] = entry
+        proposed, entry = prepare_metadata_ack(root, state, path, old_hash, new_hash, reason, confirmed_by, authorization_source)
         scoped = check_scope(root, proposed)
-        other = [name for name in set(scoped['current']) | set(state['baseline']) if scoped['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name != path]
-        if other:
-            raise ValueError(f'存在其他范围外变化，拒绝确认: {sorted(other)}')
         preview = digest({'projectRoot': str(root), 'taskId': task_id, 'path': path, 'oldSha256': old_hash, 'newSha256': new_hash, 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'stateSha256': digest(state), 'snapshotSha256': digest(scoped['current'])})
         # 验证报告仍绑定真实当前文件；已有结果显式降为 stale，绝不重写旧报告。
         for item in proposed['completion'].values():
@@ -720,14 +869,16 @@ def acknowledge_metadata(root: Path, task_id: str, path: str, old_hash: str, new
                 os.close(audit_fd)
         finally:
             os.close(task_fd)
-        # 备份后再核对，避免确认期间文件再次变化。
+        # 原始 state 仍须一致；advisory lock 不能阻止不遵守协议的旧 writer 或外部工具。
+        refreshed_state = task_record(root, directory / 'state.json')
+        if digest(refreshed_state) != digest(state):
+            raise ValueError('备份期间任务状态变化；需要重新预览')
+        task_identity(root, refreshed_state)
         refreshed = check_scope(root, proposed)
-        other = [name for name in set(refreshed['current']) | set(state['baseline']) if refreshed['current'].get(name) != state['baseline'].get(name) and name not in state['allowedFiles'] and name != path]
-        if other:
-            raise ValueError(f'备份期间出现其他范围外变化: {sorted(other)}')
         if digest(refreshed['current']) != digest(scoped['current']):
             raise ValueError('预览后实际快照变化；需要重新审查')
         proposed['generation'] += 1
+        proposed['updatedAt'] = entry['at']
         invalidate_completion(proposed)
         atomic_json(directory / 'state.json', proposed)
         try:
@@ -1009,16 +1160,20 @@ def verify_configuration(root: Path, task_id: str, profile: str = "D0") -> dict:
 def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: str, reason: str,
                          confirmed_by: str, authorization_source: str, apply: bool = False,
                          preview_hash: str | None = None, context_files: list[str] | None = None,
-                         offline_ack: str = '') -> dict:
+                         offline_ack: str = '', metadata_ack: dict | None = None) -> dict:
     """逐条预览/承接/取消；操作 ID 与原状态摘要绑定，取消不代表验收通过。"""
     root = root.resolve()
-    if action not in {'cancel', 'continue', 'release-execution'} or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', operation_id or ''):
+    if action not in {'cancel', 'continue', 'release-execution', 'complete-code'} or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', operation_id or ''):
         raise ValueError('需明确 action 和安全唯一 operation-id')
     if not all(isinstance(value, str) and value.strip() for value in (reason, confirmed_by, authorization_source)):
         raise ValueError('需原因、确认人及实际授权来源；文本记录不代替授权')
     context_files = sorted(set(context_files or []))
     request = {'action': action, 'operationId': operation_id, 'reason': reason, 'confirmedBy': confirmed_by,
                'authorizationSource': authorization_source, 'contextFiles': context_files, 'offlineWritersStopped': offline_ack}
+    if metadata_ack is not None:
+        if action != 'continue' or not isinstance(metadata_ack, dict) or set(metadata_ack) != {'path', 'oldSha256', 'newSha256'}:
+            raise ValueError('组合元数据确认仅供 continue，必须给出精确路径与旧/新摘要')
+        request['metadataAcknowledgement'] = metadata_ack
     directory = task_dir(root, task_id)
     with project_lock(root, '.ai-project/tasks.lock') if apply else contextlib.nullcontext():
         state = task_record(root, directory / 'state.json', allow_legacy=True)
@@ -1035,6 +1190,8 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
         if action == 'release-execution' and (state['status'] not in TERMINAL or not state.get('pendingExecutions') or not offline_ack.strip()):
             raise ValueError('仅终态遗留执行可显式停写解除，必须记录真实停写来源')
         legacy = state['schemaVersion'] == '1.0'
+        if action == 'complete-code' and (legacy or state['status'] != 'active'):
+            raise ValueError('代码交付仅接受明确活动的新协议任务；blocked/waiting 或旧任务不能自动完成')
         if legacy and not offline_ack.strip():
             raise ValueError('旧任务迁移须记录已停止旧 writer 的来源；不能在线混合升级')
         anchor = root_anchor(root)
@@ -1050,7 +1207,13 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
                 raise ValueError('仓库/worktree 归属变化，拒绝任务迁移')
         current = None
         changed_context = []
+        captured = None
+        metadata_entry = None
         proposed = json.loads(json.dumps(state))
+        if action == 'complete-code' or metadata_ack is not None:
+            if state.get('pendingExecutions'):
+                raise ValueError('存在尚未确认退出的执行；不能交付代码或组合确认元数据')
+            require_verification_idle(root, task_id)
         if action == 'continue':
             current = observe_for_task(root, state)
             target = stable_identity(current, root)
@@ -1073,28 +1236,44 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
                     raise ValueError('不能承接受保护配置修改')
                 # 原 baseline 保留，明确确认只允许该配置的当前摘要，未来再变仍阻塞。
                 proposed.setdefault('acknowledgedContext', {})[name] = {'oldSha256': state['baseline'].get(name), 'newSha256': captured.get(name), 'operationId': operation_id}
-            check_scope(root, proposed)
+            if metadata_ack is not None:
+                proposed, metadata_entry = prepare_metadata_ack(root, proposed, metadata_ack['path'], metadata_ack['oldSha256'], metadata_ack['newSha256'], reason, confirmed_by, authorization_source)
+            if check_scope(root, proposed)['current'] != captured:
+                raise ValueError('承接期间实际快照变化；重新核对精确摘要')
             proposed.update(acceptedContext=current, stableIdentity=target, acceptedRevision=current_revision(root),
                             acceptedConfiguration={name: captured.get(name) for name in current['readCoverage']['paths']})
+        elif action == 'complete-code':
+            if context_files:
+                raise ValueError('交付代码不能顺带承接配置；请先单独精确确认')
+            task_identity(root, state)
+            captured = check_scope(root, state)['current']
+            if any(captured.get(name) != state['checkpoint'].get(name) for name in state['allowedFiles']):
+                raise ValueError('代码与检查点不符；先审查并 checkpoint，不得静默重设冻结')
         else:
             if context_files:
                 raise ValueError('终结/释放执行不承接配置；context-files 必须为空')
             if action == 'release-execution':
-                verification = f'.ai-project/tasks/{task_id}/verification.lock'
-                if boundary.exists(verification):
-                    with project_lock(root, verification):
-                        pass  # 活动 runner 仍持锁时，即便文本声称停写也拒绝解除。
+                require_verification_idle(root, task_id)
         generation = state.get('generation', 0)
         preview = {'taskId': task_id, 'projectAnchor': anchor, 'stateSha256': digest(state), 'generation': generation,
                    'request': request, 'observedContext': current, 'changedContextFiles': changed_context,
-                   'observedRevision': current_revision(root) if action == 'continue' else None,
-                   'snapshotSha256': digest(captured) if action == 'continue' else None,
+                   'observedRevision': current_revision(root) if captured is not None else None,
+                   'snapshotSha256': digest(captured) if captured is not None else None,
                    'writes': [f'.ai-project/tasks/{task_id}/state.json', f'.ai-project/tasks/{task_id}/handoff.md']}
+        if metadata_entry is not None:
+            preview['metadataAcknowledgement'] = metadata_ack
+        if action == 'complete-code':
+            preview['codeSnapshot'] = {name: captured.get(name) for name in state['allowedFiles']}
         token = digest(preview)
         if not apply:
             return {'status': 'dry-run', **preview, 'previewSha256': token}
         if not preview_hash or preview_hash != token:
             raise ValueError('预览后任务/上下文/文件/参数漂移；重新只读核对')
+        if captured is not None:
+            if digest(task_record(root, directory / 'state.json', allow_legacy=True)) != digest(state) or tree_snapshot(root) != captured or current_revision(root) != preview['observedRevision']:
+                raise ValueError('提交前状态/源码/revision变化，未应用交付或确认')
+            if action == 'continue' and observe_for_task(root, state) != current:
+                raise ValueError('提交前配置再次变化，未应用承接')
         if legacy:
             proposed['legacyState'] = state  # 单条原子状态保存完整旧记录，不批量替换旧身份。
             proposed.update(schemaVersion='2.0', taskProtocolVersion=TASK_PROTOCOL,
@@ -1102,6 +1281,8 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
                             acceptedContext=state['identity'], acceptedRevision=state['baseRevision'])
             if action == 'continue':
                 proposed.update(stableIdentity=target, acceptedContext=current, acceptedRevision=preview['observedRevision'])
+        if metadata_entry is not None:
+            proposed.update(schemaVersion='2.1', metadataAckProtocol='2')
         proposed['generation'] = generation + 1
         invalidate_completion(proposed)
         proposed['updatedAt'] = now()
@@ -1110,13 +1291,19 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
         if action == 'cancel':
             proposed['status'] = 'cancelled'
             proposed['nextAction'] = '已取消；未完成项需新任务显式声明范围，历史证据保留'
+        if action == 'complete-code':
+            proposed['status'] = 'closed'
+            proposed['codeDelivery'] = {'schemaVersion': '1.0', 'kind': 'code-complete-awaiting-acceptance', 'generation': proposed['generation'], 'operationId': operation_id, 'snapshot': preview['codeSnapshot'], 'rulesIdentity': rules_identity(root), 'reason': reason, 'confirmedBy': confirmed_by, 'authorizationSource': authorization_source, 'at': proposed['updatedAt']}
+            proposed['nextAction'] = '编辑范围已释放；验收维度和待办保留，后续修改须新任务重新取得精确范围'
         # continue 保留 waiting-permission/blocked；确认配置不代替恢复执行或解除权限暂停。
-        result = {'status': 'cancelled' if action == 'cancel' else 'execution-release-confirmed' if action == 'release-execution' else 'context-confirmed', 'taskId': task_id,
+        result = {'status': 'code-delivered' if action == 'complete-code' else 'cancelled' if action == 'cancel' else 'execution-release-confirmed' if action == 'release-execution' else 'context-confirmed', 'taskId': task_id,
                   'operationId': operation_id, 'previewSha256': token, 'generation': proposed['generation'],
                   'stateSha256Before': digest(state), 'writes': preview['writes']}
         proposed.setdefault('lifecycleHistory', []).append({'operationId': operation_id, 'request': request,
                          'stateSha256Before': digest(state), 'beforeContext': expected,
                          'previewSha256': token, 'result': result, 'at': proposed['updatedAt']})
+        if metadata_entry is not None:
+            proposed['lifecycleHistory'][-1]['metadataAcknowledgement'] = metadata_entry
         handoff = save_state(directory, proposed)
         return {**result, 'handoff': handoff}
 
@@ -1124,7 +1311,7 @@ def lifecycle_transition(root: Path, task_id: str, action: str, operation_id: st
 def main() -> int:
     """提供身份/init/resume/checkpoint/verify 命令；预期冲突以 blocked 和非零退出表达。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("identity", "init", "resume", "check", "checkpoint", "verify", "verify-config", "ack-metadata", "migrate-task", "cancel", "release-execution"))
+    parser.add_argument("command", choices=("identity", "init", "resume", "check", "checkpoint", "verify", "verify-config", "ack-metadata", "migrate-task", "cancel", "release-execution", "complete-code"))
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--task-id")
     parser.add_argument("--task-only", action="store_true", help="使用已发布的任务专用引导范围")
@@ -1156,9 +1343,15 @@ def main() -> int:
     parser.add_argument('--operation-id', default='')
     parser.add_argument('--action', choices=('continue', 'cancel', 'release-execution'), default='continue')
     parser.add_argument('--offline-writers-stopped', default='')
+    parser.add_argument('--metadata-file', help='仅 continue：与精确配置承接同一事务确认的单个 UI 状态文件')
+    parser.add_argument('--from-delivery', help='仅 init：显式继承已核代码交付的精确子集，仍须确认人及授权来源')
     args = parser.parse_args()
     root = args.project.expanduser().resolve()
     try:
+        if args.metadata_file and (args.command != 'migrate-task' or args.action != 'continue'):
+            raise ValueError('--metadata-file 只供 migrate-task continue 的显式组合确认')
+        if args.from_delivery and args.command != 'init':
+            raise ValueError('--from-delivery 仅供新任务 init；不恢复旧任务编辑权')
         if args.task_only_spec and (args.command != 'init' or not args.task_only or not args.task_id or args.task_read_policy):
             raise ValueError('任务专用引导文件仅供 task-only init 使用')
         if args.task_only and (not args.task_id or args.command == 'identity'):
@@ -1169,7 +1362,7 @@ def main() -> int:
         manager = task_only_scope(root, args.task_id, spec) if args.task_only else contextlib.nullcontext()
         metadata = task_metadata_scope(root, args.task_id) if args.task_only and (args.command in {'cancel', 'release-execution'} or args.command == 'migrate-task' and args.action in {'cancel', 'release-execution'}) else contextlib.nullcontext()
         with manager, metadata:
-            if not (args.task_only and args.command == 'resume'):
+            if not (args.task_only and args.command in {'resume', 'complete-code'}):
                 protocol_gate(root)
             if args.command == "identity":
                 selection = {"bundleId": args.bundle_id, "scheme": args.scheme, "product": args.product, "module": args.module, "buildMode": args.build_mode}
@@ -1182,13 +1375,14 @@ def main() -> int:
                         if checked != result:
                             raise ValueError('确认身份期间配置变化，请重试只读预览')
                         atomic_json(root / ".ai-project/identity.json", checked)
-            elif args.command in {'migrate-task', 'cancel', 'release-execution'}:
-                result = lifecycle_transition(root, args.task_id, args.command if args.command in {'cancel', 'release-execution'} else args.action,
+            elif args.command in {'migrate-task', 'cancel', 'release-execution', 'complete-code'}:
+                combined_ack = {'path': args.metadata_file, 'oldSha256': args.old_sha256, 'newSha256': args.new_sha256} if args.metadata_file else None
+                result = lifecycle_transition(root, args.task_id, args.command if args.command != 'migrate-task' else args.action,
                     args.operation_id, args.reason, args.confirmed_by, args.authorization_source,
-                    args.apply, args.preview_sha256, args.file, args.offline_writers_stopped)
+                    args.apply, args.preview_sha256, args.file, args.offline_writers_stopped, combined_ack)
             elif args.command == "init":
                 policy = json.loads(bootstrap_bytes(args.task_read_policy.parent.resolve(), args.task_read_policy.name)) if args.task_read_policy else None
-                result = begin(root, args.task_id, args.file, args.request, args.owner, args.protect, read_policy=policy)
+                result = begin(root, args.task_id, args.file, args.request, args.owner, args.protect, read_policy=policy, from_delivery=args.from_delivery, confirmed_by=args.confirmed_by, authorization_source=args.authorization_source)
             elif args.command == "resume":
                 result = resume(root, args.task_id)
             elif args.command == "check":

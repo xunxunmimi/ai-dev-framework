@@ -74,9 +74,9 @@ class RuntimeScenarios(unittest.TestCase):
         with self.assertRaises(ValueError): acknowledge_metadata(self.root, 'metadata', name, '0'*64, new, 'fixture', **auth)
         with self.assertRaises(ValueError): acknowledge_metadata(self.root, 'metadata', name, old, '0'*64, 'fixture', **auth)
         with self.assertRaises(ValueError): acknowledge_metadata(self.root, 'metadata', 'wrong.txt', old, new, 'fixture', **auth)
-        (self.root / 'two.swift').write_text('outside change')
+        (self.root / 'third.swift').write_text('unowned outside change')
         with self.assertRaises(ValueError): acknowledge_metadata(self.root, 'metadata', name, old, new, 'fixture', **auth)
-        (self.root / 'two.swift').write_text('// 自有函数样本 B\n')
+        (self.root / 'third.swift').unlink()
         preview = acknowledge_metadata(self.root, 'metadata', name, old, new, 'fixture', **auth)
         self.assertEqual(preview['status'], 'dry-run')
         with self.assertRaises(ValueError): acknowledge_metadata(self.root, 'other-task', name, old, new, 'fixture', True, preview['previewSha256'], **auth)
@@ -112,6 +112,390 @@ class RuntimeScenarios(unittest.TestCase):
         self.assertTrue(list((task_dir(self.root, 'metadata')/'metadata-confirmations').glob('*.json')))
         acknowledge_metadata(self.root, 'metadata', name, old, new, 'fixture', True, preview, **auth)
         with self.assertRaises(ValueError): validate_report(self.root, report, 'metadata', 'D2')
+
+    def metadata_fixture(self, name, content=b'old metadata'):
+        """创建精确UI夹具，保持元数据不属于源码允许编辑列表。"""
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def metadata_apply(self, task_id, name, old, new, reason='synthetic exact UI authorization'):
+        """测试使用真实dry-run摘要再apply，不模拟成功或跳过锁内复核。"""
+        auth = {'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic explicit metadata authorization'}
+        preview = acknowledge_metadata(self.root, task_id, name, old, new, reason, **auth)
+        return acknowledge_metadata(self.root, task_id, name, old, new, reason, True, preview['previewSha256'], **auth)
+
+    def test_outer_workspace_metadata_and_absent_new_ui_keep_immutable_baseline(self):
+        """外层workspace可确认既有/精确新建UI；原baseline与历史identity逐字保留。"""
+        existing = 'Workspace.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        new_name = 'Second.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(existing, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'outer workspace UI')
+        original = (task_dir(self.root, 'metadata') / 'baseline.json').read_bytes()
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        self.metadata_apply('metadata', existing, old, new)
+        added = self.metadata_fixture(new_name, b'newly created')
+        new_hash = hashlib.sha256(added.read_bytes()).hexdigest()
+        self.metadata_apply('metadata', new_name, 'absent', new_hash)
+        saved = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        self.assertEqual((task_dir(self.root, 'metadata') / 'baseline.json').read_bytes(), original)
+        self.assertEqual(saved['identity'], state['identity'])
+        self.assertEqual(saved['schemaVersion'], '2.1')
+        self.assertEqual(saved['metadataAckProtocol'], '2')
+        self.assertNotIn(new_name, saved['baseline'])
+        self.assertEqual(saved['acknowledgedMetadata'][new_name]['oldSha256'], 'absent')
+        self.assertEqual(saved['generation'], state['generation'] + 2)
+        check_scope(self.root, saved)
+        self.assertEqual(len(list((task_dir(self.root, 'metadata') / 'metadata-confirmations').glob('*.json'))), 2)
+
+    def test_metadata_multiple_acknowledgements_and_legal_parallel_owner(self):
+        """已有精确ack与合法并发owner按check_scope授权核对，不能被二次扫描错误拒绝。"""
+        names = ['Demo.xcodeproj/project.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate',
+                 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate']
+        paths = [self.metadata_fixture(name, b'old') for name in names]
+        begin(self.root, 'metadata', ['one.swift'], 'metadata changes')
+        begin(self.root, 'parallel', ['two.swift'], 'independent source owner')
+        (self.root / 'two.swift').write_text('// changed by independent scoped owner')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        for name, path in zip(names, paths):
+            path.write_bytes(b'new')
+            self.metadata_apply('metadata', name, old, new)
+        state = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        check_scope(self.root, state)
+        self.assertEqual(set(state['acknowledgedMetadata']), set(names))
+        (self.root / 'unowned.swift').write_text('// unowned untracked source must not be ignored')
+        extra = 'Third.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(extra, b'new')
+        with self.assertRaises(ValueError):
+            self.metadata_apply('metadata', extra, 'absent', hashlib.sha256(path.read_bytes()).hexdigest())
+
+    def test_metadata_after_explicit_same_target_pbx_context_confirmation(self):
+        """先明确承接同目标PBX再确认UI；standalone不会顺便接受第二次PBX漂移。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        pbx = self.root / 'Demo.xcodeproj/project.pbxproj'
+        pbx.parent.mkdir(exist_ok=True)
+        pbx.write_text('PRODUCT_BUNDLE_IDENTIFIER = com.example.synthetic; CURRENT_PROJECT_VERSION = 1;')
+        scheme = self.root / 'Demo.xcodeproj/xcshareddata/xcschemes/Demo.xcscheme'
+        scheme.parent.mkdir(parents=True); scheme.write_text('<Scheme/>')
+        git(self.root, 'add', '.'); git(self.root, 'commit', '-qm', 'synthetic Xcode target fixture')
+        atomic_json(self.root / '.ai-project/identity.json', observe_identity(self.root, 'ios', {'bundleId': 'com.example.synthetic', 'scheme': 'Demo'}))
+        state = begin(self.root, 'metadata', ['one.swift'], 'same-target context then UI')
+        baseline = (task_dir(self.root, 'metadata') / 'baseline.json').read_bytes()
+        pbx.write_text('PRODUCT_BUNDLE_IDENTIFIER = com.example.synthetic; CURRENT_PROJECT_VERSION = 2;')
+        kwargs = {'context_files': ['Demo.xcodeproj/project.pbxproj'], 'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic exact context approval'}
+        preview = task_runtime.lifecycle_transition(self.root, 'metadata', 'continue', 'context-generation-2', 'same target config', **kwargs)
+        task_runtime.lifecycle_transition(self.root, 'metadata', 'continue', 'context-generation-2', 'same target config', apply=True, preview_hash=preview['previewSha256'], **kwargs)
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        self.metadata_apply('metadata', name, old, new)
+        saved = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        self.assertIn('Demo.xcodeproj/project.pbxproj', saved['acknowledgedContext'])
+        self.assertEqual(saved['identity'], state['identity'])
+        self.assertEqual((task_dir(self.root, 'metadata') / 'baseline.json').read_bytes(), baseline)
+        check_scope(self.root, saved)
+        pbx.write_text('PRODUCT_BUNDLE_IDENTIFIER = com.example.synthetic; CURRENT_PROJECT_VERSION = 3;')
+        extra = 'Other.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        new_path = self.metadata_fixture(extra, b'UI created during unconfirmed PBX change')
+        with self.assertRaises(ValueError):
+            self.metadata_apply('metadata', extra, 'absent', hashlib.sha256(new_path.read_bytes()).hexdigest())
+
+    def test_metadata_absent_and_digest_rejections_do_not_accept_deletion(self):
+        """absent不能覆盖已有基线、代替未知旧值或确认删除；新值始终需完整真实摘要。"""
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'strict UI hashes')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        auth = {'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic approval'}
+        for previous, current in [('absent', new), ('0' * 64, new), (old, '0' * 64), (None, new), (old, 'absent'), (old[:8], new)]:
+            with self.subTest(previous=previous, current=current):
+                with self.assertRaises(ValueError):
+                    acknowledge_metadata(self.root, 'metadata', name, previous, current, 'strict hashes', **auth)
+        missing = 'Missing.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        with self.assertRaises((ValueError, OSError)):
+            acknowledge_metadata(self.root, 'metadata', missing, 'absent', new, 'not a deletion authorization', **auth)
+        self.assertEqual(read_json(task_dir(self.root, 'metadata') / 'state.json'), state)
+
+    def test_prepare_metadata_ack_does_not_accept_identity_or_scope_and_rejects_aliases(self):
+        """helper仅准备单项元数据；身份/范围由组合调用者核对，非规范路径不可绕过边界。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'prepare helper contract')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        with mock.patch.object(task_runtime, 'task_identity', side_effect=AssertionError('helper called task_identity')), mock.patch.object(task_runtime, 'check_scope', side_effect=AssertionError('helper called check_scope')):
+            proposed, entry = task_runtime.prepare_metadata_ack(self.root, state, name, old, new, 'metadata only', 'synthetic reviewer', 'synthetic approval')
+        self.assertNotIn('acknowledgedMetadata', state)
+        self.assertEqual(proposed['acknowledgedMetadata'][name], entry)
+        self.assertEqual(read_json(task_dir(self.root, 'metadata') / 'state.json'), state)
+        for invalid in ('../' + name, str(path), name.replace('xcuserdata/', './xcuserdata/'), name.replace('xcuserdata/', 'xcuserdata//'), name.replace('/', chr(92)), name + '.backup'):
+            with self.subTest(path=invalid):
+                with mock.patch('os.open', side_effect=AssertionError('invalid UI path touched filesystem')):
+                    with self.assertRaises(ValueError):
+                        task_runtime.prepare_metadata_ack(self.root, state, invalid, old, new, 'invalid path', 'reviewer', 'approval')
+
+    def test_metadata_links_hardlinks_and_protected_paths_remain_blocked(self):
+        """精确UI文件同样拒绝叶子/祖先链接、多硬链接和受保护元数据。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'strict UI boundary', protected=['Protected.xcworkspace/**'])
+        old = hashlib.sha256(b'old').hexdigest()
+        outside = self.base / 'outside-ui'; outside.write_bytes(b'new')
+        new = hashlib.sha256(b'new').hexdigest()
+        path.unlink(); path.symlink_to(outside)
+        with self.assertRaises((ValueError, OSError)):
+            task_runtime.prepare_metadata_ack(self.root, state, name, old, new, 'symlink denied', 'reviewer', 'approval')
+        path.unlink(); os.link(outside, path)
+        with self.assertRaises((ValueError, OSError)):
+            task_runtime.prepare_metadata_ack(self.root, state, name, old, new, 'hardlink denied', 'reviewer', 'approval')
+        path.unlink(); path.write_bytes(b'new')
+        linked = self.root / 'Alias.xcworkspace'; linked.symlink_to(self.root / 'Outer.xcworkspace', target_is_directory=True)
+        alias = name.replace('Outer.', 'Alias.')
+        with self.assertRaises((ValueError, OSError)):
+            task_runtime.prepare_metadata_ack(self.root, state, alias, 'absent', new, 'ancestor symlink denied', 'reviewer', 'approval')
+        protected = name.replace('Outer.', 'Protected.')
+        with mock.patch('os.open', side_effect=AssertionError('protected UI path opened')):
+            with self.assertRaises(ValueError):
+                task_runtime.prepare_metadata_ack(self.root, state, protected, 'absent', new, 'protected UI denied', 'reviewer', 'approval')
+
+    def test_metadata_preview_and_backup_races_keep_concurrent_changes(self):
+        """预览后允许源码/任务变化都失效；备份期间旧writer改state不能被确认覆盖。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'preview/state race')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        auth = {'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic approval'}
+        preview = acknowledge_metadata(self.root, 'metadata', name, old, new, 'preview race', **auth)
+        (self.root / 'one.swift').write_text('// scoped source changed after preview')
+        with self.assertRaisesRegex(ValueError, '预览摘要'):
+            acknowledge_metadata(self.root, 'metadata', name, old, new, 'preview race', True, preview['previewSha256'], **auth)
+        preview = acknowledge_metadata(self.root, 'metadata', name, old, new, 'state race', **auth)
+        state_path = task_dir(self.root, 'metadata') / 'state.json'
+        changed = {**state, 'generation': state['generation'] + 1, 'nextAction': 'concurrent explicit writer update'}
+        original_fsync = task_runtime.os.fsync
+        injected = []
+        def raced_fsync(fd):
+            original_fsync(fd)
+            if not injected:
+                injected.append(True)
+                state_path.write_text(json.dumps(changed))
+        with mock.patch.object(task_runtime.os, 'fsync', side_effect=raced_fsync):
+            with self.assertRaisesRegex(ValueError, '任务状态变化'):
+                acknowledge_metadata(self.root, 'metadata', name, old, new, 'state race', True, preview['previewSha256'], **auth)
+        self.assertEqual(read_json(state_path), changed)
+        self.assertNotIn('acknowledgedMetadata', changed)
+
+    def test_metadata_backup_file_drift_and_pending_execution_do_not_acknowledge(self):
+        """备份期间UI再次变化不能承认旧摘要；未解除执行租约时也不能承认或清租约。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'metadata during execution')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        auth = {'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic approval'}
+        preview = acknowledge_metadata(self.root, 'metadata', name, old, new, 'UI race', **auth)
+        original_fsync = task_runtime.os.fsync
+        injected = []
+        def raced_fsync(fd):
+            original_fsync(fd)
+            if not injected:
+                injected.append(True)
+                path.write_bytes(b'changed while backing up')
+        with mock.patch.object(task_runtime.os, 'fsync', side_effect=raced_fsync):
+            with self.assertRaises(ValueError):
+                acknowledge_metadata(self.root, 'metadata', name, old, new, 'UI race', True, preview['previewSha256'], **auth)
+        state_path = task_dir(self.root, 'metadata') / 'state.json'
+        self.assertEqual(read_json(state_path), state)
+        path.write_bytes(b'new')
+        leased = {**state, 'pendingExecutions': {'synthetic-execution': {'runnerPid': 1}}}
+        atomic_json(state_path, leased)
+        with self.assertRaisesRegex(ValueError, '验证执行'):
+            acknowledge_metadata(self.root, 'metadata', name, old, new, 'runner pending', **auth)
+        self.assertEqual(read_json(state_path), leased)
+
+    def test_metadata_same_path_reconfirmation_preserves_full_chain_and_blocks_next_drift(self):
+        """同一路径逐轮确认只接受上一新摘要；每轮历史与原baseline保留，未确认下一轮仍阻塞。"""
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'original')
+        state = begin(self.root, 'metadata', ['one.swift'], 'sequential UI confirmation')
+        baseline = (task_dir(self.root, 'metadata') / 'baseline.json').read_bytes()
+        original, first, second = (hashlib.sha256(value).hexdigest() for value in (b'original', b'first', b'second'))
+        path.write_bytes(b'first')
+        self.metadata_apply('metadata', name, original, first)
+        first_state = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        first_entry = first_state['acknowledgedMetadata'][name]
+        self.assertEqual(first_entry['baselineSha256'], original)
+        path.write_bytes(b'second')
+        before = (task_dir(self.root, 'metadata') / 'state.json').read_bytes()
+        with self.assertRaisesRegex(ValueError, '续轮旧摘要'):
+            self.metadata_apply('metadata', name, original, second)
+        self.assertEqual((task_dir(self.root, 'metadata') / 'state.json').read_bytes(), before)
+        self.metadata_apply('metadata', name, first, second)
+        saved = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        self.assertEqual(saved['metadataAcknowledgements'][0], first_entry)
+        self.assertEqual(len(saved['metadataAcknowledgements']), 2)
+        self.assertEqual(saved['acknowledgedMetadata'][name]['oldSha256'], first)
+        self.assertEqual(saved['acknowledgedMetadata'][name]['baselineSha256'], original)
+        self.assertEqual(saved['generation'], state['generation'] + 2)
+        self.assertEqual((task_dir(self.root, 'metadata') / 'baseline.json').read_bytes(), baseline)
+        check_scope(self.root, saved)
+        with self.assertRaises(ValueError):
+            self.metadata_apply('metadata', name, second, second)
+        path.write_bytes(b'third, not yet confirmed')
+        with self.assertRaises(ValueError):
+            check_scope(self.root, saved)
+        self.assertEqual(read_json(task_dir(self.root, 'metadata') / 'state.json'), saved)
+        path.write_bytes(b'original')
+        with self.assertRaises(ValueError):
+            check_scope(self.root, saved)
+
+    def test_metadata_absent_creation_then_reconfirmation_keeps_absent_baseline(self):
+        """新建UI的后续轮记录真实上一摘要；baselineSha256始终为absent，不能再次冒充首次新建。"""
+        name = 'Added.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        state = begin(self.root, 'metadata', ['one.swift'], 'new UI then later UI state')
+        path = self.metadata_fixture(name, b'created')
+        first, second = (hashlib.sha256(value).hexdigest() for value in (b'created', b'later'))
+        self.metadata_apply('metadata', name, 'absent', first)
+        path.write_bytes(b'later')
+        with self.assertRaises(ValueError):
+            self.metadata_apply('metadata', name, 'absent', second)
+        self.metadata_apply('metadata', name, first, second)
+        saved = read_json(task_dir(self.root, 'metadata') / 'state.json')
+        self.assertNotIn(name, state['baseline'])
+        self.assertNotIn(name, saved['baseline'])
+        self.assertEqual([item['oldSha256'] for item in saved['metadataAcknowledgements']], ['absent', first])
+        self.assertTrue(all(item['baselineSha256'] == 'absent' for item in saved['metadataAcknowledgements']))
+        check_scope(self.root, saved)
+        path.unlink()
+        with self.assertRaises(ValueError):
+            check_scope(self.root, saved)
+
+    def test_metadata_legacy_map_is_preserved_before_first_sequential_history_entry(self):
+        """旧map无history时原记录逐字回填；历史与latest不一致时拒绝承接，绝不删旧证据。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'original')
+        state = begin(self.root, 'metadata', ['one.swift'], 'legacy UI acknowledgement continuation')
+        original, first, second = (hashlib.sha256(value).hexdigest() for value in (b'original', b'first', b'second'))
+        path.write_bytes(b'first')
+        legacy_entry = {'oldSha256': original, 'newSha256': first, 'reason': 'legacy explicit UI approval', 'confirmedBy': 'synthetic reviewer', 'authorizationSource': 'synthetic legacy approval', 'taskId': 'metadata', 'path': name, 'at': task_runtime.now()}
+        state['acknowledgedMetadata'] = {name: legacy_entry}
+        state_path = task_dir(self.root, 'metadata') / 'state.json'
+        atomic_json(state_path, state)
+        path.write_bytes(b'second')
+        self.metadata_apply('metadata', name, first, second)
+        saved = read_json(state_path)
+        self.assertEqual(saved['metadataAcknowledgements'][0], legacy_entry)
+        self.assertEqual(len(saved['metadataAcknowledgements']), 2)
+        self.assertEqual(saved['metadataAcknowledgements'][1]['baselineSha256'], original)
+        check_scope(self.root, saved)
+        path.write_bytes(b'third')
+        for key, value in [('reason', None), ('oldSha256', '0' * 64), ('newSha256', '0' * 64), ('taskId', 'other-task'), ('at', '2026-11-10T00:00:00')]:
+            with self.subTest(historical_field=key):
+                tampered = json.loads(json.dumps(saved))
+                if value is None:
+                    tampered['metadataAcknowledgements'][0].pop(key)
+                else:
+                    tampered['metadataAcknowledgements'][0][key] = value
+                with self.assertRaisesRegex(ValueError, '确认历史'):
+                    task_runtime.prepare_metadata_ack(self.root, tampered, name, second, hashlib.sha256(b'third').hexdigest(), 'must not skip a broken old round', 'reviewer', 'approval')
+        tampered = json.loads(json.dumps(saved))
+        tampered['metadataAcknowledgements'][-1]['reason'] = 'history no longer equals latest'
+        with self.assertRaisesRegex(ValueError, '确认历史'):
+            task_runtime.prepare_metadata_ack(self.root, tampered, name, second, hashlib.sha256(b'third').hexdigest(), 'must not rewrite history', 'reviewer', 'approval')
+        self.assertEqual(read_json(state_path), saved)
+
+    def test_metadata_exact_path_owner_or_terminal_pending_execution_cannot_be_acknowledged(self):
+        """精确UI仍归其他任务或遗留执行时不能用ack接管；终结且无租约才可明确确认。"""
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        git(self.root, 'add', name); git(self.root, 'commit', '-qm', 'synthetic UI ownership fixture')
+        begin(self.root, 'metadata', ['one.swift'], 'metadata acknowledgement must not steal ownership')
+        other = begin(self.root, 'ui-owner', [name], 'separate exact UI owner')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        own_state = (task_dir(self.root, 'metadata') / 'state.json').read_bytes()
+        for status, pending in [('active', False), ('waiting-permission', False), ('blocked', False), ('closed', True), ('cancelled', True)]:
+            with self.subTest(status=status, pending=pending):
+                holder = {**other, 'status': status}
+                if pending:
+                    holder['pendingExecutions'] = {'synthetic-execution': {'runnerPid': 1}}
+                atomic_json(task_dir(self.root, 'ui-owner') / 'state.json', holder)
+                with self.assertRaisesRegex(ValueError, '另一任务或遗留执行占用'):
+                    self.metadata_apply('metadata', name, old, new)
+                self.assertEqual((task_dir(self.root, 'metadata') / 'state.json').read_bytes(), own_state)
+        atomic_json(task_dir(self.root, 'ui-owner') / 'state.json', {**other, 'status': 'closed'})
+        self.metadata_apply('metadata', name, old, new)
+        check_scope(self.root, read_json(task_dir(self.root, 'metadata') / 'state.json'))
+
+    def test_metadata_existing_verification_lock_blocks_even_without_pending_lease(self):
+        """无lease的旧runner仍持验证锁时拒绝；普通预览不创建原本缺失的锁文件。"""
+        import task_runtime
+        name = 'Outer.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        path = self.metadata_fixture(name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'existing runner lock')
+        path.write_bytes(b'new')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        auth = {'confirmed_by': 'synthetic reviewer', 'authorization_source': 'synthetic approval'}
+        directory = task_dir(self.root, 'metadata')
+        verification = directory / 'verification.lock'
+        self.assertFalse(verification.exists())
+        preview = acknowledge_metadata(self.root, 'metadata', name, old, new, 'existing lock probe', **auth)
+        self.assertFalse(verification.exists())
+        with task_runtime.project_lock(self.root, '.ai-project/tasks/metadata/verification.lock'):
+            with self.assertRaisesRegex(ValueError, '验证锁'):
+                acknowledge_metadata(self.root, 'metadata', name, old, new, 'existing lock probe', **auth)
+            with self.assertRaisesRegex(ValueError, '验证锁'):
+                acknowledge_metadata(self.root, 'metadata', name, old, new, 'existing lock probe', True, preview['previewSha256'], **auth)
+        self.assertEqual(read_json(directory / 'state.json'), state)
+        result = acknowledge_metadata(self.root, 'metadata', name, old, new, 'existing lock probe', True, preview['previewSha256'], **auth)
+        self.assertEqual(result['status'], 'acknowledged')
+
+    def test_metadata_new_path_seeds_all_legacy_map_entries_without_reading_other_ui(self):
+        """首次升级2.1补齐其他路径旧map历史；只核已有字段/基线，不额外打开其UI。"""
+        import task_runtime
+        from read_boundary import ReadBoundary
+        old_name = 'First.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        new_name = 'Second.xcworkspace/xcuserdata/person.xcuserdatad/UserInterfaceState.xcuserstate'
+        old_path = self.metadata_fixture(old_name, b'old')
+        new_path = self.metadata_fixture(new_name, b'old')
+        state = begin(self.root, 'metadata', ['one.swift'], 'upgrade legacy metadata maps on a new path')
+        old, new = (hashlib.sha256(value).hexdigest() for value in (b'old', b'new'))
+        old_path.write_bytes(b'new')
+        legacy_entry = {'oldSha256': old, 'newSha256': new, 'reason': 'old path explicit approval', 'confirmedBy': 'synthetic reviewer', 'authorizationSource': 'synthetic legacy approval', 'taskId': 'metadata', 'path': old_name, 'at': task_runtime.now()}
+        state['acknowledgedMetadata'] = {old_name: legacy_entry}
+        state_path = task_dir(self.root, 'metadata') / 'state.json'
+        atomic_json(state_path, state)
+        new_path.write_bytes(b'new')
+        original_read = ReadBoundary.read_bytes
+        def guarded_read(boundary, relative):
+            if relative == old_name:
+                raise AssertionError('legacy history seeding opened another UI file')
+            return original_read(boundary, relative)
+        with mock.patch.object(ReadBoundary, 'read_bytes', guarded_read):
+            proposed, entry = task_runtime.prepare_metadata_ack(self.root, state, new_name, old, new, 'new path exact approval', 'reviewer', 'approval')
+        self.assertEqual(proposed['schemaVersion'], '2.1')
+        self.assertEqual(proposed['metadataAcknowledgements'], [legacy_entry, entry])
+        task_runtime.validate_state(proposed)
+        self.assertEqual(read_json(state_path), state)
+        broken = json.loads(json.dumps(state))
+        broken['acknowledgedMetadata'][old_name].pop('authorizationSource')
+        with self.assertRaisesRegex(ValueError, '确认历史'):
+            task_runtime.prepare_metadata_ack(self.root, broken, new_name, old, new, 'cannot hide incomplete old path', 'reviewer', 'approval')
+        self.metadata_apply('metadata', new_name, old, new)
+        saved = read_json(state_path)
+        self.assertEqual(saved['metadataAcknowledgements'][0], legacy_entry)
+        self.assertEqual(set(saved['acknowledgedMetadata']), {old_name, new_name})
+        check_scope(self.root, saved)
 
     def test_external_one_time_bound_and_denials(self):
         import read_boundary
