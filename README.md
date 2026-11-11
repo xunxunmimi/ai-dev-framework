@@ -1,3 +1,5 @@
+> Current source version: `2.6.8-harmony-workspace-ignore`. See [workspace policy and upgrade compatibility](docs/鸿蒙迁移工作区Git规则.md). The version notices below are historical.
+
 > 本分支为 `2.6.7-task-handoff-review` 审阅候选，尚非正式 release。本轮支持精确 UI 状态确认、代码交付释放与显式新任务接续，兼容/回退和离线应用限制见 [交付说明](docs/2.6.7-代码交付与精确元数据确认.md)。上传分支不会自动更新任何项目，实际安装须核确切提交和项目回执。下面保留原套件说明。
 
 # AI 开发框架套件 2.6.1
