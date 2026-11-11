@@ -17,7 +17,7 @@ from task_runtime import suite_digest
 def inventory(source: Path) -> dict:
     """只包含活动框架源码白名单；不打包项目、凭据、会话、发布物或历史证据。"""
     names = ['VERSION', 'README.md']
-    allowed = {'.py','.sh','.md','.json','.json5','.yaml','.yml','.swift','.ets','.pbxproj'}
+    allowed = {'.py','.sh','.md','.json','.json5','.yaml','.yml','.swift','.ets','.pbxproj','.gitignore'}
     for folder in ('frameworks','shared','installers','capabilities'):
         names += [p.relative_to(source).as_posix() for p in (source/folder).rglob('*') if p.is_file() and not p.is_symlink() and p.suffix in allowed and not any(x.startswith('.') or x=='__pycache__' for x in p.relative_to(source).parts)]
     return {name:{'sha256':hashlib.sha256((source/name).read_bytes()).hexdigest(), 'mode':(source/name).stat().st_mode & 0o777} for name in sorted(names)}
