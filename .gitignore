@@ -46,3 +46,7 @@ secrets/
 [Tt][Oo][Kk][Ee][Nn].*
 *_[Aa][Cc][Cc][Oo][Uu][Nn][Tt].*.json
 *_[Aa][Cc][Cc][Oo][Uu][Nn][Tt].json
+
+# Local HarmonyOS migration state and evidence are not source deliverables.
+.migration-workspace/
+.migration-workspace-v2/
