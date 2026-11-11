@@ -1,3 +1,7 @@
+# 2.6.9 exact-source recovery
+
+Version `2.6.9-source-recovery`, based on main `5f28215406407c9dcea268f0ccdc343cb0c56599`. The recovery command restores a verified original source location, not a new source identity. Task protocol, state schemas, and normal update gates remain unchanged.
+
 # 2.6.8 Harmony workspace policy
 
 Version `2.6.8-harmony-workspace-ignore`, based on main `0450d4dcdeaad2bba35cadb1b0f97728e5497e5b`. Task protocol remains 2; state schemas and upgrade gates are unchanged. Historical hashes below do not identify this revision.
