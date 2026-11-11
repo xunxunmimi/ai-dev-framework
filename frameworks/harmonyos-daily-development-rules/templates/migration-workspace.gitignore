@@ -1,0 +1,3 @@
+# Append to the project .gitignore; preserve local state and existing rules.
+.migration-workspace/
+.migration-workspace-v2/

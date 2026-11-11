@@ -1,3 +1,7 @@
+# 2.6.8 Harmony workspace policy
+
+Version `2.6.8-harmony-workspace-ignore`, based on main `0450d4dcdeaad2bba35cadb1b0f97728e5497e5b`. Task protocol remains 2; state schemas and upgrade gates are unchanged. Historical hashes below do not identify this revision.
+
 # 本地隔离候选说明
 
 本轮 `2.6.7-task-handoff-review` 基于 main `5b6e9d5e352fbbc80e06f3dd6555b8394ed1cd81`，未合并/未部署。任务协议仍为2；只有采用新元数据确认的任务使用明确2.1状态格式，旧运行器和旧安装器会拒绝该格式。代码交付单独使用既有closed终态，验收维度保留，后续编辑须新任务。详见 `docs/2.6.7-代码交付与精确元数据确认.md`；以下2.6.6说明为历史来源，不代表当前候选安装状态。
