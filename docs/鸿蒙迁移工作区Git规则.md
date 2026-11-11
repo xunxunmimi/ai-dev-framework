@@ -20,3 +20,11 @@ git diff --cached --name-only | grep -E '(^|/)\.migration-workspace(-v2)?/'
 ```
 
 第二、三条输出需要审查；无匹配时 grep 返回 1 是正常现象。忽略规则不移除已跟踪数据。需要停止跟踪时先确认本地保留、验证工具依赖、团队交接及用户授权，再单独处理；不在应用代码提交里隐式批量删除，也不清除历史。
+
+## Version and existing-task compatibility
+
+This change uses `2.6.8-harmony-workspace-ignore`, not the previous `2.6.7-task-handoff-review` version identity. Task protocol remains 2 and state schemas are unchanged. Pin the full source including the ignore template into a new version/content-addressed directory; never overwrite an existing snapshot.
+
+Active tasks, pending executions, and local rule drift still block updates. A version bump does not clear these gates. Keep existing tasks on their verified original snapshot; individually resolve actual completion, handoff, cancellation, and pending execution ownership through existing commands before offline audit/update. Never bulk-close tasks, reset baselines, edit manifest digests, or bypass locks.
+
+This release prevents another reuse of a version label but does not repair earlier same-version drift. Verify the original installation manifest and complete snapshot first. Restore the original source only if verifiable; otherwise preserve the project and report the missing evidence. Publishing/merging does not upgrade existing projects automatically.
