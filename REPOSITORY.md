@@ -1,3 +1,7 @@
+# 2.6.11 optional HarmonyOS reimplementation
+
+Version `2.6.11-harmony-reimplementation` identifies the optional capability added in PR #6. Task protocol and existing task state formats are unchanged. Fixed snapshots remain valid; mutable suite roots require an explicit audited upgrade and must not be pulled underneath active tasks. No project or device is upgraded by this commit.
+
 # 2.6.10 explicit migration bootstrap
 
 Version `2.6.10-migration-bootstrap`, based on main `5f28215406407c9dcea268f0ccdc343cb0c56599`. PR #4 (2.6.9 source recovery) is independent and is not included. Task protocol, state schemas, credential exclusions and existing update gates are unchanged. No installed project or pinned release is automatically upgraded.
