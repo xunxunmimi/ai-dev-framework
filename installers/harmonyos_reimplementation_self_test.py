@@ -86,6 +86,26 @@ class ReimplementationTests(unittest.TestCase):
         os.link(original,lock_path)
         with self.assertRaises(ValueError):enable(self.target,self.source,True)
         self.assertEqual(before,original.read_bytes());self.assertFalse((self.target/TARGET).exists())
+    def test_pin_isolation_and_same_version_content_identity(self):
+        import shutil
+        from enable_harmonyos_reimplementation import SUITE
+        from task_runtime import suite_digest
+        # 合成可变源码；旧 pin 永远不因可变目录的新增能力而变化。
+        mutable=self.base/'suite-copy';shutil.copytree(SUITE,mutable,ignore=shutil.ignore_patterns('.git','__pycache__'))
+        before=suite_digest(mutable);first=pin(mutable,self.base/'versions',True)
+        (mutable/'README.md').write_text('synthetic README change')
+        self.assertEqual(before,suite_digest(mutable))
+        # README 不进套件摘要但进 pin inventory，同摘要快照不可冒充复用。
+        with self.assertRaises(ValueError):pin(mutable,self.base/'versions',True)
+        (mutable/'README.md').write_bytes((SUITE/'README.md').read_bytes())
+        extra=mutable/'capabilities/synthetic-extra';extra.mkdir();(extra/'SKILL.md').write_text('synthetic capability')
+        self.assertNotEqual(before,suite_digest(mutable))
+        second=pin(mutable,self.base/'versions',True)
+        self.assertNotEqual(first['root'],second['root'])
+        verify(Path(first['root']));verify(Path(second['root']))
+        (mutable/'VERSION').write_text('synthetic-next-version\n')
+        third=pin(mutable,self.base/'versions',True)
+        self.assertNotEqual(second['root'],third['root']);verify(Path(third['root']))
     def test_capability_is_pinnable(self):
         from enable_harmonyos_reimplementation import SUITE
         result=pin(SUITE,self.base/'pins',True);record=verify(Path(result['root']))

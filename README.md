@@ -1,3 +1,5 @@
+> Current source version: `2.6.11-harmony-reimplementation`. Optional Skill and upgrade boundaries: [鸿蒙独立重实现 Skill](docs/鸿蒙独立重实现Skill.md). Previous version notices below are historical.
+
 > Current source version: `2.6.10-migration-bootstrap`. See [migration authorization bootstrap](docs/迁移初始化与读取授权.md). Previous version notices below are historical.
 
 > Current source version: `2.6.8-harmony-workspace-ignore`. See [workspace policy and upgrade compatibility](docs/鸿蒙迁移工作区Git规则.md). The version notices below are historical.
