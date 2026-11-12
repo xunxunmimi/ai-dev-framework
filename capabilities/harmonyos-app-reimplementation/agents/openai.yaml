@@ -1,0 +1,6 @@
+interface:
+  display_name: "鸿蒙应用独立重实现"
+  short_description: "功能、逻辑和文案一致，重新设计 UI 与自有实现"
+  default_prompt: "使用 $harmonyos-app-reimplementation，先分析原项目行为和文案，再依据 Logo 和参考图独立重实现鸿蒙应用。"
+policy:
+  allow_implicit_invocation: false

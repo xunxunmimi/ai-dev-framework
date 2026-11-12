@@ -47,6 +47,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/safety_regression.py
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/upgrade_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/controlled_task_write_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/optional_ui_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/installers/harmonyos_reimplementation_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/safety_regression.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/evals/scripts/routing_self_test.py" || status=1
 
