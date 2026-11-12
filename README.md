@@ -1,3 +1,5 @@
+> Current source version: `2.6.10-migration-bootstrap`. See [migration authorization bootstrap](docs/迁移初始化与读取授权.md). Previous version notices below are historical.
+
 > Current source version: `2.6.8-harmony-workspace-ignore`. See [workspace policy and upgrade compatibility](docs/鸿蒙迁移工作区Git规则.md). The version notices below are historical.
 
 > 本分支为 `2.6.7-task-handoff-review` 审阅候选，尚非正式 release。本轮支持精确 UI 状态确认、代码交付释放与显式新任务接续，兼容/回退和离线应用限制见 [交付说明](docs/2.6.7-代码交付与精确元数据确认.md)。上传分支不会自动更新任何项目，实际安装须核确切提交和项目回执。下面保留原套件说明。
@@ -45,7 +47,14 @@
 ./installers/setup-project.sh harmony-daily /绝对路径/项目
 
 # 迁移项目
+# 两个目录已有有效完整读取策略时：
 ./installers/setup-project.sh migration /绝对路径/iOS源 /绝对路径/Harmony目标
+
+# 首次迁移：仅在用户已明确授权两个项目的完整迁移读取与策略登记时
+# 两个目录须预先存在；授权说明使用实际用户原意，不填凭据，不把路径当作授权。
+./installers/setup-project.sh migration "/绝对路径/iOS源" "/绝对路径/Harmony目标" \
+  --init-missing-read-policies \
+  --authorization-source "用户明确要求将此 iOS 项目迁移至指定鸿蒙项目，授权读取两项目业务代码并登记范围"
 
 # 已进入提测/修 Bug 的迁移项目
 ./installers/setup-project.sh harmony-transition /绝对路径/Harmony项目
