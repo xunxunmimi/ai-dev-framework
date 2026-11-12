@@ -1,3 +1,7 @@
+# 2.6.10 explicit migration bootstrap
+
+Version `2.6.10-migration-bootstrap`, based on main `5f28215406407c9dcea268f0ccdc343cb0c56599`. PR #4 (2.6.9 source recovery) is independent and is not included. Task protocol, state schemas, credential exclusions and existing update gates are unchanged. No installed project or pinned release is automatically upgraded.
+
 # 2.6.8 Harmony workspace policy
 
 Version `2.6.8-harmony-workspace-ignore`, based on main `0450d4dcdeaad2bba35cadb1b0f97728e5497e5b`. Task protocol remains 2; state schemas and upgrade gates are unchanged. Historical hashes below do not identify this revision.

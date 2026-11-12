@@ -29,18 +29,20 @@ def main() -> int:
     parser.add_argument("source", type=Path)
     parser.add_argument("target", type=Path, nargs="?")
     parser.add_argument("--name")
+    parser.add_argument("--init-missing-read-policies", action="store_true", help="记录已获用户明确授权的缺失策略；不覆盖已有策略")
+    parser.add_argument("--authorization-source", help="实际用户授权来源/原意，不含凭据；路径本身不是授权")
     args = parser.parse_args()
     framework = Path(__file__).resolve().parent.parent
     suite = framework.parents[1]
-    source = args.source.expanduser().resolve()
-    target = args.target.expanduser().resolve() if args.target else source.parent / f"{source.name}_harmonyos"
-    require_complete(source)
-    require_complete(target)
-    if not source.is_dir():
-        raise SystemExit(f"iOS source does not exist: {source}")
-    if nested(source, target):
-        raise SystemExit("source and target cannot be equal or nested")
     sys.path.insert(0, str(suite / "installers"))
+    from migration_read_policy import prepare
+    resolved_source = args.source.expanduser().resolve()
+    target = args.target if args.target else resolved_source.parent / f"{resolved_source.name}_harmonyos"
+    try:
+        source, target = prepare(args.source, target, args.init_missing_read_policies, args.authorization_source)
+    except (OSError, ValueError) as error:
+        print(json.dumps({"status": "blocked", "error": str(error)}, ensure_ascii=False), file=sys.stderr)
+        return 2
     from project_framework import installation_locks, installation_states, audit_project, manifest_protocol, read_manifest, require_fresh_installation
     with installation_locks(target):
         installed = (target / ".ai-project/framework-installation.json").is_file()

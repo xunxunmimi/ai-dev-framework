@@ -19,8 +19,8 @@ case "$mode" in
     exec "$suite_dir/frameworks/harmonyos-daily-development-rules/setup-project.sh" "$2" migration-transition "${4:-}"
     ;;
   migration)
-    [[ $# -eq 3 ]] || { printf 'Usage: %s migration /absolute/ios-source /absolute/harmony-target\n' "$0" >&2; exit 2; }
-    exec python3 "$suite_dir/frameworks/ios-to-harmony-migrator-v2/scripts/start_migration.py" "$2" "$3"
+    [[ $# -ge 3 ]] || { printf 'Usage: %s migration /absolute/ios-source /absolute/harmony-target\n' "$0" >&2; exit 2; }
+    exec python3 "$suite_dir/frameworks/ios-to-harmony-migrator-v2/scripts/start_migration.py" "${@:2}"
     ;;
   *)
     printf 'Usage: %s {ios-daily|harmony-daily|harmony-transition|migration} ...\n' "$0" >&2
