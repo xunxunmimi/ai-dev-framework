@@ -19,7 +19,7 @@ for parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(shared))
         break
 from read_boundary import ReadBoundary, require_complete, SNAPSHOT_EXCLUDES
-from task_runtime import check_operation_hold, atomic_json, binding, digest as content_digest, validate_report, lock, task_dir, read_json, protocol_gate, verification_session, validate_state
+from task_runtime import check_operation_hold, atomic_json, binding, digest as content_digest, validate_report, lock, task_dir, read_json, protocol_gate, verification_session, validate_state, validate_gate_paths, canonical_project_path
 
 
 
@@ -69,7 +69,12 @@ def main() -> int:
     if target != target_from_path.resolve():
         raise ValueError("Gate 配置目标与读取授权根不一致")
     protocol_gate(target)
-    evidence = Path(config["evidenceRoot"]).resolve()
+    evidence = Path(config["evidenceRoot"])
+    if not evidence.is_absolute():
+        evidence = Path.cwd() / evidence
+    # 只映射已经确认等同目标根的前缀；项目内部链接仍由路径检查拒绝。
+    evidence = canonical_project_path(target_from_path, target, evidence)
+    args.report = canonical_project_path(target_from_path, target, args.report)
     cache = target / ".migration-workspace-v2/cache/gates"
     by_id = {gate["id"]: gate for gate in config.get("gates", [])}
     selected = args.gate or config.get("profiles", {}).get(args.profile, [])
@@ -79,7 +84,10 @@ def main() -> int:
         return 0
     if not args.task_id:
         raise ValueError("执行 Gate 必须提供 --task-id；先初始化并核对任务身份")
-    with verification_session(target, args.task_id) as initial_task:
+    # 固定配置错误必须在执行租约登记之前拒绝；不创建任务状态或运行 Gate。
+    validate_gate_paths(target, evidence, args.report)
+    with verification_session(target, args.task_id, gate_paths=(evidence, args.report)) as initial_task:
+        # 锁内再检查，以便路径被并发替换时保守保留租约。
         workspace = target / ".migration-workspace-v2"
         if not evidence.is_relative_to(workspace / "evidence"):
             raise ValueError("Gate 日志只能写到迁移工作区 evidence 目录")

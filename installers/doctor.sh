@@ -34,6 +34,8 @@ check_link harmonyos-daily-development-rules
 
 python3 "$suite_dir/shared/task-routing/self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/runtime_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/gate_preflight_self_test.py" || status=1
+PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/verification_output_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/read_boundary_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/task_scope_self_test.py" || status=1
 PYTHONDONTWRITEBYTECODE=1 python3 "$suite_dir/shared/task-routing/task_only_self_test.py" || status=1

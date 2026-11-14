@@ -1,3 +1,7 @@
+# 2.6.12 verification preflight
+
+Version `2.6.12-verification-preflight-rc3` adds deterministic report/evidence path checks before verification registration. A new framework-observed pre-Gate path error may settle only its own new execution with history; post-yield or unknown executions remain pending. It is not a legacy release facility and does not upgrade any installed project or pinned task. Full process-tree exit is not inferred from a PID or lock. Preflight rejects case-equivalent control names, aliases and non-directory ancestors, but does not eliminate races after checking. Before atomic state replacement an audit failure leaves the prior state; after replacement, a persistence failure is an uncertain commit requiring locked inspection of state and history.
+
 # 2.6.11 optional HarmonyOS reimplementation
 
 Version `2.6.11-harmony-reimplementation` identifies the optional capability added in PR #6. Task protocol and existing task state formats are unchanged. Fixed snapshots remain valid; mutable suite roots require an explicit audited upgrade and must not be pulled underneath active tasks. No project or device is upgraded by this commit.
