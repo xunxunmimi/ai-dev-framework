@@ -12,6 +12,8 @@ import os
 import re
 import subprocess
 import tempfile
+import unicodedata
+import stat
 from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,7 +88,16 @@ def task_scoped(function):
     @wraps(function)
     def scoped(root, task=None, *args, **kwargs):
         """保留原接口；check_scope 的第二参数是含 taskId 的状态。"""
-        root = root.resolve()
+        original_root = root.expanduser()
+        root = original_root.resolve()
+        if function.__name__ == 'run_verification':
+            # 仅将明确指定且解析到同一项目根的前缀映射到规范根；根内路径继续逐段审查。
+            if len(args) >= 4:
+                values = list(args)
+                values[3] = canonical_project_path(original_root, root, values[3])
+                args = tuple(values)
+            elif 'report_path' in kwargs:
+                kwargs['report_path'] = canonical_project_path(original_root, root, kwargs['report_path'])
         if task is None:
             task = kwargs.pop('task_id', None) if 'task_id' in kwargs else kwargs.pop('state', None)
         task_id = task['taskId'] if isinstance(task, dict) else task
@@ -1006,12 +1017,70 @@ def finish_execution(state: dict, execution_id: str) -> None:
     state.setdefault('executionHistory', []).append({'executionId': execution_id, 'finishedAt': now()})
 
 
+def _check_existing_path(root: Path, relative: Path, *, file_target: bool) -> None:
+    """检查现有节点；缺失的合法后代由原有写入流程创建。不是防并发写入的沙箱。"""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    descriptor = os.open(root, flags)
+    try:
+        for index, part in enumerate(relative.parts):
+            last_file = file_target and index == len(relative.parts) - 1
+            if last_file:
+                try:
+                    info = os.stat(part, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    return
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise ValueError('报告目标必须是普通单硬链接文件')
+            else:
+                try:
+                    child = os.open(part, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    return
+                except OSError as error:
+                    raise ValueError('报告或证据的现有父路径必须是真实目录') from error
+                os.close(descriptor)
+                descriptor = child
+    finally:
+        os.close(descriptor)
+
+
+def _absolute_path(path: Path) -> Path:
+    if '..' in path.parts:
+        raise ValueError('路径不能包含父级跳转')
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def canonical_project_path(project_input: Path, root: Path, path: Path) -> Path:
+    """仅映射经解析确认为同一项目的根前缀；不解析根内报告路径。"""
+    project_input = _absolute_path(project_input.expanduser())
+    path = _absolute_path(path)
+    if project_input.resolve(strict=True) != root:
+        raise ValueError('项目根别名与已确认项目不一致')
+    try:
+        return root / path.relative_to(project_input)
+    except ValueError:
+        return path
+
+
+def validate_gate_paths(root: Path, evidence: Path, report: Path) -> None:
+    """只检查既有目录和路径边界；不执行命令、不读取业务内容。"""
+    evidence, report = _absolute_path(evidence), _absolute_path(report)
+    workspace = root / '.migration-workspace-v2'
+    if not evidence.is_relative_to(workspace / 'evidence'):
+        raise ValueError('Gate 日志只能写到迁移工作区 evidence 目录')
+    if not report.is_relative_to(workspace / 'reports') or report == workspace / 'reports':
+        raise ValueError('Gate 报告只能写到迁移工作区 reports 目录，禁止覆盖业务文件')
+    _check_existing_path(root, evidence.relative_to(root), file_target=False)
+    _check_existing_path(root, report.relative_to(root), file_target=True)
+
+
 @contextlib.contextmanager
-def verification_session(root: Path, task_id: str):
+def verification_session(root: Path, task_id: str, *, gate_paths: tuple[Path, Path] | None = None):
     """迁移 Gate 共用锁序与持久执行租约；崩溃租约必须明确停写后人工解除。"""
     execution = contextlib.ExitStack()
     execution_id = None
     session_state = None
+    pre_command_rejected = False
     try:
         with project_lock(root, '.ai-project/tasks.lock'):
             protocol_gate(root)
@@ -1023,6 +1092,18 @@ def verification_session(root: Path, task_id: str):
             check_scope(root, state)  # 确定性范围错误在登记执行租约前拒绝。
             execution_id = start_execution(root, task_id, state)
         session_state = state
+        execution_record = dict(state['pendingExecutions'][execution_id])
+        execution_state_sha = digest(state)
+        if gate_paths is not None:
+            # 此处为框架内置、无外部命令的路径核验；执行上下文尚未 yield 给 Gate。
+            try:
+                validate_gate_paths(root, gate_paths[0], gate_paths[1])
+            except (ValueError, OSError):
+                pre_command_rejected = True
+                raise
+            except BaseException:
+                session_state['_retainExecutionLease'] = True
+                raise
         try:
             yield state
         except BaseException:
@@ -1033,7 +1114,11 @@ def verification_session(root: Path, task_id: str):
         if execution_id is not None and not session_state.get("_retainExecutionLease", False):
             with project_lock(root, '.ai-project/tasks.lock'):
                 state = task_record(root, task_dir(root, task_id) / 'state.json')
+                if pre_command_rejected and (digest(state) != execution_state_sha or state.get('pendingExecutions', {}).get(execution_id) != execution_record):
+                    raise ValueError('Gate 前置失败后任务或执行记录漂移，保留待确认执行')
                 finish_execution(state, execution_id)
+                if pre_command_rejected:
+                    state['executionHistory'][-1].update({'outcome': 'gate-path-rejected-before-gate', 'executionRecord': execution_record, 'stateSha256Before': execution_state_sha, 'projectAnchor': root_anchor(root), 'taskId': task_id, 'proofKind': 'framework-pre-yield-path-check'})
                 save_state(task_dir(root, task_id), state)
 
 
@@ -1053,6 +1138,45 @@ def check_operation_hold(root: Path, contract: dict) -> None:
         raise ValueError('该具体操作仍在历史平台拒绝暂停中；项目目录授权不能解除平台实际限制')
 
 
+_REPORT_RESERVED = {'state.json', 'baseline.json', 'handoff.md', 'task-only.json', 'read-policy.json', 'verification.lock', 'configuration.json', 'verification-history', 'metadata-confirmations', 'controlled-writes', 'identity-confirmations', 'metadata-writes'}
+
+
+def _reserved_node_alias(directory_fd: int, name: str) -> bool:
+    """除了规范化名称，核对实际现有节点是否与控制节点同一设备和 inode。"""
+    try:
+        selected = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    for reserved in _REPORT_RESERVED:
+        try:
+            info = os.stat(reserved, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        if (selected.st_dev, selected.st_ino) == (info.st_dev, info.st_ino):
+            return True
+    return False
+
+
+def validate_verification_report_path(root: Path, directory: Path, report_path: Path) -> Path:
+    """确定性路径错误在登记执行前拒绝；不创建目录，不跟随链接。"""
+    report_path = _absolute_path(report_path)
+    try:
+        rel = report_path.relative_to(directory)
+    except ValueError as error:
+        raise ValueError('验证报告只能写到本任务目录') from error
+    normalized = {unicodedata.normalize('NFC', name).casefold() for name in _REPORT_RESERVED}
+    if not rel.parts or unicodedata.normalize('NFC', rel.parts[0]).casefold() in normalized or any(part.startswith('.') for part in rel.parts):
+        raise ValueError('验证报告不能覆盖任务控制文件或历史记录')
+    fd = secure_fd(root, directory.relative_to(root).as_posix(), directory=True)
+    try:
+        if _reserved_node_alias(fd, rel.parts[0]):
+            raise ValueError('验证报告不能指向任务控制文件或历史记录的等价节点')
+    finally:
+        os.close(fd)
+    _check_existing_path(root, report_path.relative_to(root), file_target=True)
+    return report_path
+
+
 @task_scoped
 def run_verification(root: Path, task_id: str, profile: str, kind: str, argv: list[str], report_path: Path, timeout: int = 900) -> dict:
     """执行明确验证契约；锁序 tasks→verification，执行期间仅持验证锁，终态只保留历史。"""
@@ -1062,8 +1186,7 @@ def run_verification(root: Path, task_id: str, profile: str, kind: str, argv: li
     if task_only_current(root):
         raise BoundaryError('任务专用部分范围不执行外部构建或测试')
     directory = task_dir(root, task_id)
-    if not report_path.resolve().is_relative_to(directory.resolve()):
-        raise ValueError('验证报告只能写到本任务目录')
+    report_path = validate_verification_report_path(root, directory, report_path)
     require_complete(root)
     contracts = read_json(root / '.ai-project/verification-commands.json').get('commands', [])
     contract = next((item for item in contracts if item.get('confirmed') is True and item.get('argv') == argv and item.get('kind') == kind and profile in item.get('profiles', [])), None)
@@ -1075,6 +1198,7 @@ def run_verification(root: Path, task_id: str, profile: str, kind: str, argv: li
     try:
         with project_lock(root, '.ai-project/tasks.lock'):
             execution.enter_context(project_lock(root, f'.ai-project/tasks/{task_id}/verification.lock'))
+            validate_verification_report_path(root, directory, report_path)
             initial = task_record(root, directory / 'state.json')
             if initial['status'] != 'active':
                 raise ValueError('等待、阻塞或终结的任务不能自动执行验证')
@@ -1397,7 +1521,7 @@ def main() -> int:
             elif args.command == "verify-config":
                 result = verify_configuration(root, args.task_id, args.profile)
             else:
-                result = run_verification(root, args.task_id, args.profile, args.kind, args.argv, args.report or task_dir(root, args.task_id) / f"{args.kind}.json")
+                result = run_verification(args.project.expanduser(), args.task_id, args.profile, args.kind, args.argv, args.report or task_dir(root, args.task_id) / f"{args.kind}.json")
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 3 if result.get("status") == "partial" else 1 if result.get("status") in {"failed", "blocked"} else 0
     except (ValueError, OSError, TypeError, KeyError, subprocess.TimeoutExpired) as error:

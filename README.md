@@ -1,4 +1,6 @@
-> Current source version: `2.6.11-harmony-reimplementation`. Optional Skill and upgrade boundaries: [鸿蒙独立重实现 Skill](docs/鸿蒙独立重实现Skill.md). Previous version notices below are historical.
+> Current source version: `2.6.12-verification-preflight-rc3`. Verification paths are checked before execution registration; only framework-observed pre-Gate path failures may settle their own new execution. Existing pending executions are not released or migrated. Previous version notices below are historical.
+
+> Previous source version: `2.6.11-harmony-reimplementation`. Optional Skill and upgrade boundaries: [鸿蒙独立重实现 Skill](docs/鸿蒙独立重实现Skill.md).
 
 > Current source version: `2.6.10-migration-bootstrap`. See [migration authorization bootstrap](docs/迁移初始化与读取授权.md). Previous version notices below are historical.
 
