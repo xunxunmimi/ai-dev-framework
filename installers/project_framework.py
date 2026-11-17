@@ -22,7 +22,7 @@ from pathlib import Path
 
 # 工具从完整套件加载共享原子写和锁；不会修改系统环境或凭据。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "shared/task-routing"))
-from task_runtime import RUNTIME_MANAGED_MAPPINGS, atomic_json, atomic_text, safe_path, suite_digest, validate_state, digest
+from task_runtime import RUNTIME_MANAGED_MAPPINGS, atomic_json, atomic_text, safe_path, suite_digest, validate_state, digest, root_anchor, match, rules_identity, require_verification_idle, preserved_rules_for_task, PRESERVED_RULES_PROTOCOL, fsync_directory
 from read_boundary import ReadBoundary, secure_fd, canonical_relative, external_control_bytes, task_only_current
 
 
@@ -444,6 +444,92 @@ def read_manifest(project: Path) -> dict:
     return ReadBoundary(project).read_json(MANIFEST_RELATIVE.as_posix())
 
 
+def task_inventory(project: Path, states: list[dict]) -> dict:
+    """Seal exact state/baseline bytes without opening reports or business sources."""
+    boundary = ReadBoundary(project)
+    inventory = {}
+    for state in states:
+        prefix = f".ai-project/tasks/{state['taskId']}"
+        raw = boundary.read_bytes(f"{prefix}/state.json")
+        if json.loads(raw) != state:
+            raise ValueError("预演时任务状态已变化")
+        baseline_name = f"{prefix}/baseline.json"
+        baseline = boundary.read_bytes(baseline_name) if boundary.exists(baseline_name) else None
+        if state.get("taskProtocolVersion") == TASK_PROTOCOL and state["status"] not in {"closed", "cancelled"}:
+            anchor = root_anchor(project)
+            if any(state["stableIdentity"].get(k) != v for k, v in anchor.items()):
+                raise ValueError(f"任务项目锚点不符: {state['taskId']}")
+            original = json.loads(baseline) if baseline is not None else None
+            if not isinstance(original, dict) or original.get("taskId") != state["taskId"] or original.get("paths") != state["baseline"] or original.get("identity") != state["identity"]:
+                raise ValueError(f"任务原始基线不完整或不匹配: {state['taskId']}")
+        inventory[state["taskId"]] = {
+            "status": state["status"], "schemaVersion": state["schemaVersion"],
+            "stateSha256": hashlib.sha256(raw).hexdigest(),
+            "baselineSha256": hashlib.sha256(baseline).hexdigest() if baseline is not None else None,
+        }
+    return inventory
+
+
+def make_preserve_plan(project: Path, suite: Path, manifest: dict, audit: dict, states: list[dict]) -> dict:
+    if manifest_protocol(manifest) != TASK_PROTOCOL:
+        raise ValueError("保留任务升级要求旧安装也是协议 2")
+    if any(state.get("taskProtocolVersion") != TASK_PROTOCOL and state["status"] not in {"closed", "cancelled"} for state in states):
+        raise ValueError("存在旧协议非终态任务；不得隐式接管")
+    suite_old = Path(manifest["suiteRoot"]).resolve(strict=True)
+    if suite_old == suite or not manifest.get("suiteSha256"):
+        raise ValueError("需要独立的新旧固定套件，并保留旧套件用于验证与恢复")
+    rules_identity(project)
+    old_schemas = runtime_state_schemas(project_text(project, ".codex-rules/_shared/task_runtime.py"))
+    if any(state["schemaVersion"] != "1.0" and state["schemaVersion"] not in old_schemas for state in states):
+        raise ValueError("旧运行器不支持现有任务状态格式，无法保证可恢复")
+    runtime = safe_path(suite, "shared/task-routing/task_runtime.py")
+    if not any(isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+               and node.value.value == PRESERVED_RULES_PROTOCOL
+               and any(isinstance(target, ast.Name) and target.id == "PRESERVED_RULES_PROTOCOL" for target in node.targets)
+               for node in ast.parse(runtime.read_text(encoding="utf-8")).body):
+        raise ValueError("目标运行器不支持保留任务规则交接")
+    inventory = task_inventory(project, states)
+    for task_id in inventory:
+        require_verification_idle(project, task_id)
+    canonical = dict(MANAGED_MAPPINGS[audit["framework"]])
+    transitions = {}
+    for item in audit["managedFiles"]:
+        if item["currentSha256"] != item["currentSourceSha256"]:
+            if canonical.get(item["path"]) != item["source"] or not item["currentSourceSha256"]:
+                raise ValueError("保留任务模式不能承接非标准受管路径: " + item["path"])
+            transitions[item["path"]] = {"before": item["currentSha256"], "after": item["currentSourceSha256"]}
+    overlays = {}
+    active = set(audit["activeProtocol2Tasks"])
+    for state in states:
+        if state["taskId"] not in active:
+            continue
+        carried = preserved_rules_for_task(manifest, state)
+        updated = dict(carried)
+        for name, change in transitions.items():
+            if name in state["allowedFiles"] or match(name, state["protectedGlobs"]) or any(name in state.get(key, {}) for key in ("acknowledgedContext", "acknowledgedMetadata")):
+                raise ValueError(f"升级触及任务独占或受保护路径: {state['taskId']}: {name}")
+            base = state["baseline"].get(name)
+            accepted = carried.get(name, {}).get("installedSha256", base)
+            if base == change["after"]:
+                updated.pop(name, None)
+            elif accepted == change["before"]:
+                updated[name] = {"baselineSha256": base, "installedSha256": change["after"]}
+            # 已有不匹配保持不匹配；绝不为迁移吞掉历史规则漂移。
+            else:
+                updated.pop(name, None)
+        if updated:
+            overlays[state["taskId"]] = {"baselineSha256": digest(state["baseline"]), "paths": updated}
+    boundary = ReadBoundary(project)
+    lifecycle = ".ai-project/lifecycle.json"
+    return {"protocol": PRESERVED_RULES_PROTOCOL, "projectAnchor": project_anchor(project),
+            "installedManifestSha256": sha256(project / MANIFEST_RELATIVE, project),
+            "lifecycleSha256": sha256(project / lifecycle, project) if boundary.exists(lifecycle) else None,
+            "projectReadCoverage": boundary.coverage(), "oldSuiteSha256": manifest["suiteSha256"],
+            "targetSuiteRoot": str(suite), "targetSuiteVersion": audit["currentSuiteVersion"],
+            "targetSuiteSha256": suite_digest(suite), "artifactReviewSha256": audit["legacyArtifactReviewSha256"],
+            "tasks": inventory, "managedTransitions": transitions, "taskOverlays": overlays}
+
+
 def audit_project(project: Path, suite: Path, artifact_review: dict | None = None) -> dict:
     """只读比较安装、源码和项目规则，返回漂移、更新状态与差异预览。"""
     project = project.resolve()
@@ -492,7 +578,7 @@ def audit_project(project: Path, suite: Path, artifact_review: dict | None = Non
     pending_tasks = [state["taskId"] for state in states if state.get("pendingExecutions")]
     supported_schemas = runtime_state_schemas((suite / 'shared/task-routing/task_runtime.py').read_text(encoding='utf-8'))
     unsupported_tasks = [state['taskId'] for state in states if state['schemaVersion'] != '1.0' and state['schemaVersion'] not in supported_schemas]
-    return {
+    result = {
         "schemaVersion": "1.0",
         "project": str(project),
         "framework": manifest.get("framework"),
@@ -516,25 +602,41 @@ def audit_project(project: Path, suite: Path, artifact_review: dict | None = Non
         "managedFiles": files,
     }
 
+    result["preserveTaskStatePlanSha256"] = None
+    if active_tasks and not local_drift and not pending_tasks and not unsupported_tasks and result["updateAvailable"]:
+        try:
+            plan = make_preserve_plan(project, suite, manifest, result, states)
+        except (OSError, ValueError) as error:
+            result["preserveTaskStateBlockedReason"] = str(error)
+        else:
+            result["preserveTaskStatePlan"] = plan
+            result["preserveTaskStatePlanSha256"] = digest(plan)
+    return result
 
-def upgrade(project: Path, suite: Path, offline_ack: str = "", artifact_review: dict | None = None) -> dict:
+
+def upgrade(project: Path, suite: Path, offline_ack: str = "", artifact_review: dict | None = None, *, preserve_task_state_plan_sha256: str | None = None) -> dict:
     """锁定并重审计后升级受管文件；保存原文及计划摘要，异常/断线后可显式恢复。"""
+    project, suite = project.resolve(), suite.resolve()
     require_offline(offline_ack)
     with installation_locks(project):
         audit = audit_project(project, suite, artifact_review)
         if audit["pendingExecutionTasks"]:
             raise ValueError("任务仍有活跃或遗留验证执行；先核实并显式 release-execution，停写声明不能越过: " + ",".join(audit["pendingExecutionTasks"]))
-        if audit["activeProtocol2Tasks"]:
+        preserve = preserve_task_state_plan_sha256 is not None
+        if preserve and (not audit["preserveTaskStatePlanSha256"] or preserve_task_state_plan_sha256 != audit["preserveTaskStatePlanSha256"]):
+            raise ValueError("保留任务升级预演摘要不匹配或不可用: " + audit.get("preserveTaskStateBlockedReason", "请重新预演"))
+        plan = audit.get("preserveTaskStatePlan") if preserve else None
+        if audit["activeProtocol2Tasks"] and not preserve:
             raise ValueError("新协议活动任务必须先显式终结，不能在线更新规则: " + ",".join(audit["activeProtocol2Tasks"]))
         if audit['unsupportedTaskSchemaTasks']:
             raise ValueError('目标运行器不支持现有任务状态格式（包括2.1），不能通过update降级语义: ' + ','.join(audit['unsupportedTaskSchemaTasks']))
-        if not audit["safeToUpdate"]:
+        if not audit["safeToUpdate"] and not preserve:
             raise ValueError("Refusing to overwrite locally modified managed files")
         # 唯一事务目录防止连续升级覆盖前一次备份；只存受管文本和清单，不拷贝业务工程。
         transaction = project / ".ai-project/upgrades" / uuid.uuid4().hex
-        paths = [item["path"] for item in audit["managedFiles"]] + [str(MANIFEST_RELATIVE), ".ai-project/lifecycle.json"]
+        paths = [item["path"] for item in audit["managedFiles"]] + [".ai-project/lifecycle.json", str(MANIFEST_RELATIVE)]
         before = {name: project_text(project, name) if safe_project_path(project, name).is_file() else None for name in paths}
-        planned = {item["path"]: safe_path(suite, item["source"]).read_text() for item in audit["managedFiles"]}
+        planned = {item["path"]: safe_path(suite, item["source"]).read_bytes().decode("utf-8") for item in audit["managedFiles"]}
         lifecycle = json.loads(before[".ai-project/lifecycle.json"]) if before[".ai-project/lifecycle.json"] else {}
         lifecycle["frameworkVersion"] = suite_version(suite)
         # 在实际修改前计算所有目标内容，断线后也能识别计划内写入并安全恢复。
@@ -544,20 +646,82 @@ def upgrade(project: Path, suite: Path, offline_ack: str = "", artifact_review: 
         future_manifest = {"schemaVersion": "1.0", "taskProtocolVersion": TASK_PROTOCOL, "suiteVersion": suite_version(suite), "framework": audit["framework"], "lifecycle": audit["lifecycle"], "installedAt": datetime.now(timezone.utc).isoformat(), "suiteRoot": str(suite), "managedFiles": future_managed, "suiteSha256": suite_digest(suite)}
         if audit["legacyArtifactReview"] is not None:
             future_manifest["legacyArtifactReview"] = audit["legacyArtifactReview"]
+        if preserve:
+            receipt = {"protocol": PRESERVED_RULES_PROTOCOL, "planSha256": preserve_task_state_plan_sha256, "tasks": plan["taskOverlays"]}
+            future_manifest["preservedTaskRules"] = {**receipt, "receiptSha256": digest(receipt)}
         manifest_protocol(future_manifest)
         planned[str(MANIFEST_RELATIVE)] = json.dumps(future_manifest, ensure_ascii=False, indent=2) + "\n"
         record = {"projectRoot": str(project), "status": "applying", "before": before, "planned": planned, "createdAt": datetime.now(timezone.utc).isoformat(), "offlineWritersStoppedSource": offline_ack.strip(), "taskDataMigration": "not-performed", "legacyArtifactReview": audit["legacyArtifactReview"]}
+        if preserve:
+            record["taskStatePreservation"] = plan
+            record["taskStatePreservationSha256"] = preserve_task_state_plan_sha256
+            # Old protocol-2 runtimes already reject a non-2 manifest. Stop writers explicitly
+            # anyway, since a process could have passed its gate before this marker.
+            record["blockedManifest"] = json.dumps({
+                "schemaVersion": "1.0", "taskProtocolVersion": "offline-upgrade-in-progress",
+                "transactionId": transaction.name,
+                "preserveTaskStatePlanSha256": preserve_task_state_plan_sha256,
+            }, indent=2) + "\n"
         atomic_json(transaction / "transaction.json", record)
-        refreshed_states = installation_states(project, audit["legacyArtifactReview"])
-        planned_schemas = runtime_state_schemas(planned.get('.codex-rules/_shared/task_runtime.py'))
-        if any(state.get('pendingExecutions') or state.get('taskProtocolVersion') == TASK_PROTOCOL and state['status'] not in {'closed', 'cancelled'} or state['schemaVersion'] != '1.0' and state['schemaVersion'] not in planned_schemas for state in refreshed_states):
-            raise ValueError('首写前任务所有权/执行/格式变化；目标运行器不支持，未替换受管文件')
-        for name, text in planned.items():
-            atomic_text(safe_project_path(project, name), text)
-        record["after"] = {name: project_text(project, name) for name in paths}
-        record["status"] = "complete"
-        atomic_json(transaction / "transaction.json", record)
-        return {"status": "updated", "transaction": str(transaction), "version": suite_version(suite)}
+        try:
+            refreshed_states = installation_states(project, audit["legacyArtifactReview"])
+            planned_schemas = runtime_state_schemas(planned.get('.codex-rules/_shared/task_runtime.py'))
+            if any(state.get('pendingExecutions') or (not preserve and state.get('taskProtocolVersion') == TASK_PROTOCOL and state['status'] not in {'closed', 'cancelled'}) or state['schemaVersion'] != '1.0' and state['schemaVersion'] not in planned_schemas for state in refreshed_states):
+                raise ValueError('首写前任务所有权/执行/格式变化；目标运行器不支持，未替换受管文件')
+            if preserve:
+                fresh = audit_project(project, suite, artifact_review)
+                if fresh["preserveTaskStatePlanSha256"] != preserve_task_state_plan_sha256:
+                    raise ValueError("首写前保留任务计划变化，未替换规则")
+                if any(hashlib.sha256(planned[item["path"]].encode("utf-8")).hexdigest() != item["currentSourceSha256"]
+                       or hashlib.sha256(planned[item["path"]].encode("utf-8")).hexdigest() != expected["installedSha256"]
+                       for item, expected in zip(fresh["managedFiles"], future_managed)):
+                    raise ValueError("首写前候选套件内容变化")
+            if preserve:
+                if project_text(project, str(MANIFEST_RELATIVE)) != before[str(MANIFEST_RELATIVE)]:
+                    raise ValueError("首写前安装清单变化")
+                atomic_text(safe_project_path(project, str(MANIFEST_RELATIVE)), record["blockedManifest"])
+            for name, text in planned.items():
+                path = safe_project_path(project, name)
+                expected_before = record["blockedManifest"] if preserve and name == str(MANIFEST_RELATIVE) else before[name]
+                if preserve and (project_text(project, name) if path.is_file() else None) != expected_before:
+                    raise ValueError("升级期间受管文件变化: " + name)
+                if preserve and name == str(MANIFEST_RELATIVE):
+                    # Do not reopen the gate until every pending record/baseline and rule is verified.
+                    require_original_task_inventory(project, record, installation_states(project, audit["legacyArtifactReview"]))
+                    if any(project_text(project, item) != expected for item, expected in planned.items() if item != name):
+                        raise ValueError("提交保留任务清单前已写入文件发生变化")
+                    if suite_version(suite) != plan["targetSuiteVersion"] or suite_digest(suite) != plan["targetSuiteSha256"]:
+                        raise ValueError("提交保留任务清单前候选套件变化")
+                if not preserve or text != expected_before:
+                    atomic_text(path, text)
+            record["after"] = {name: project_text(project, name) for name in paths}
+            if preserve:
+                if record["after"] != planned:
+                    raise ValueError("写入后的规则与事务计划不符")
+                rules_identity(project)
+            record["status"] = "complete"
+            atomic_json(transaction / "transaction.json", record)
+        except Exception as error:
+            if preserve:
+                try:
+                    restore(project, transaction, offline_ack, artifact_review)
+                except Exception as restore_error:
+                    raise ValueError(f"升级未完成且未能自动恢复，请保持停写并检查事务 {transaction}: {restore_error}") from error
+            raise
+        return {"status": "updated", "transaction": str(transaction), "version": suite_version(suite),
+                **({"preservedTaskCount": len(plan["tasks"])} if preserve else {})}
+
+
+def require_original_task_inventory(project: Path, record: dict, states: list[dict]) -> None:
+    plan = record["taskStatePreservation"]
+    if digest(plan) != record.get("taskStatePreservationSha256") or plan["projectAnchor"] != project_anchor(project):
+        raise ValueError("原任务保留事务摘要或项目归属变化")
+    if ReadBoundary(project).coverage() != plan["projectReadCoverage"]:
+        raise ValueError("任务保留事务读取策略变化，拒绝自动恢复")
+    if task_inventory(project, states) != plan["tasks"]:
+        raise ValueError("任务状态或基线已变化，拒绝恢复旧规则；保持停写并人工审查")
+    for task_id in plan["tasks"]:
+        require_verification_idle(project, task_id)
 
 
 def runtime_state_schemas(text: str | None) -> set[str]:
@@ -593,12 +757,20 @@ def restore(project: Path, transaction: Path, offline_ack: str = "", artifact_re
             raise ValueError("任务仍有活跃或遗留验证执行；先核实并显式 release-execution，停写声明不能越过安装恢复门禁")
         previous_text = record["before"].get(str(MANIFEST_RELATIVE))
         previous_protocol = manifest_protocol(json.loads(previous_text)) if previous_text else "legacy"
-        if any(state.get("taskProtocolVersion") == TASK_PROTOCOL and (previous_protocol != TASK_PROTOCOL or state["status"] not in {"closed", "cancelled"}) for state in states):
+        preserve = "taskStatePreservation" in record
+        if preserve:
+            require_original_task_inventory(project, record, states)
+            previous = json.loads(previous_text)
+            previous_suite = Path(previous["suiteRoot"])
+            if previous_protocol != TASK_PROTOCOL or suite_version(previous_suite) != previous["suiteVersion"] or suite_digest(previous_suite) != previous["suiteSha256"]:
+                raise ValueError("旧固定套件不可用或内容变化，不能恢复并交还任务")
+        if not preserve and any(state.get("taskProtocolVersion") == TASK_PROTOCOL and (previous_protocol != TASK_PROTOCOL or state["status"] not in {"closed", "cancelled"}) for state in states):
             raise ValueError("安装恢复不能降级新协议任务或覆盖活动任务；任务数据回滚不属于安装 restore")
         supported = runtime_state_schemas(record['before'].get('.codex-rules/_shared/task_runtime.py'))
-        if any(state.get('schemaVersion') == '2.1' and '2.1' not in supported for state in states):
+        if any(state.get('schemaVersion') not in supported and (state.get('schemaVersion') == '2.1' or preserve and state.get('schemaVersion') != '1.0') for state in states):
             raise ValueError('旧运行器不支持2.1连续元数据确认；即使任务已关闭，安装 restore 也不能降级任务语义')
-        for name, before in record["before"].items():
+        def checked_current(name):
+            before = record["before"][name]
             path = safe_project_path(project, name)
             current = project_text(project, name) if ReadBoundary(project).exists(name) else None
             allowed = [before]
@@ -606,12 +778,27 @@ def restore(project: Path, transaction: Path, offline_ack: str = "", artifact_re
                 allowed.append(record["after"][name])
             if name in record["planned"]:
                 allowed.append(record["planned"][name])
+            if preserve and name == str(MANIFEST_RELATIVE):
+                allowed.append(record["blockedManifest"])
             if current not in allowed:
                 raise ValueError(f"恢复会覆盖后续漂移，拒绝: {name}")
-        for name, before in record["before"].items():
+            return current
+        for name in record["before"]:
+            checked_current(name)
+        if preserve and checked_current(str(MANIFEST_RELATIVE)) == record["planned"][str(MANIFEST_RELATIVE)]:
+            atomic_text(safe_project_path(project, str(MANIFEST_RELATIVE)), record["blockedManifest"])
+        restore_names = [name for name in record["before"] if name != str(MANIFEST_RELATIVE)] + [str(MANIFEST_RELATIVE)]
+        for name in restore_names:
+            before = record["before"][name]
             path = safe_project_path(project, name)
+            if preserve and checked_current(name) == before:
+                continue
+            if preserve and name == str(MANIFEST_RELATIVE):
+                require_original_task_inventory(project, record, installation_states(project, review))
             if before is None:
                 path.unlink(missing_ok=True)
+                if preserve:
+                    fsync_directory(path.parent)
             else:
                 atomic_text(path, before)
         record["status"] = "restored"
@@ -647,6 +834,7 @@ def main() -> int:
     update.add_argument("project", type=Path)
     update.add_argument("--suite", type=Path, required=True)
     update.add_argument("--dry-run", action="store_true")
+    update.add_argument("--preserve-task-state-plan-sha256")
     update.add_argument("--offline-writers-stopped", default="")
     adopt = sub.add_parser("adopt")
     adopt.add_argument("project", type=Path)
@@ -660,6 +848,8 @@ def main() -> int:
         command_parser.add_argument("--legacy-artifact-review", type=Path)
         command_parser.add_argument("--legacy-artifact-review-sha256")
     args = parser.parse_args()
+    if args.command == "update" and args.dry_run and args.preserve_task_state_plan_sha256 is not None:
+        parser.error("--dry-run 不能与 --preserve-task-state-plan-sha256 同时使用")
     project = args.project.expanduser().resolve()
     if args.command == "review-artifacts":
         print(json.dumps(review_artifacts(project, args.directory), ensure_ascii=False, indent=2))
@@ -706,7 +896,7 @@ def main() -> int:
         # 文件 SHA 也在实际双锁内重读；预览之后换控制文件不能偷换已批准审查。
         with installation_locks(project):
             review = load_artifact_review(project, args.legacy_artifact_review, args.legacy_artifact_review_sha256)
-            result = upgrade(project, suite, args.offline_writers_stopped, review)
+            result = upgrade(project, suite, args.offline_writers_stopped, review, preserve_task_state_plan_sha256=args.preserve_task_state_plan_sha256)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     review = load_artifact_review(project, args.legacy_artifact_review, args.legacy_artifact_review_sha256)
@@ -714,12 +904,12 @@ def main() -> int:
     if args.command == "audit":
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["safeToUpdate"] else 2
-    if not result["safeToUpdate"]:
+    if not result["safeToUpdate"] and not result["preserveTaskStatePlanSha256"]:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         print("Refusing unsafe update; inspect managed-file drift, active protocol-2 tasks, and pending executions in the audit.", file=sys.stderr)
         return 3
     if args.dry_run:
-        print(json.dumps({"audit": result, "applyMode": "managed-files-only", "recovery": "python3 installers/project_framework.py restore <project> --suite <suite> --transaction <upgrade-directory>"}, ensure_ascii=False, indent=2))
+        print(json.dumps({"audit": result, "applyMode": "explicit-preserve-task-state" if not result["safeToUpdate"] else "managed-files-only", "recovery": "python3 installers/project_framework.py restore <project> --suite <suite> --transaction <upgrade-directory>"}, ensure_ascii=False, indent=2))
         return 0
     raise ValueError("未知安装命令")
 
