@@ -28,6 +28,7 @@ SECRET_SUFFIXES = {".p12", ".pem", ".key", ".mobileprovision", ".cer"}
 PROTECTED = (".git/**", ".aws/**", ".ssh/**", ".gnupg/**", "Pods/**", "**/Pods/**", "Carthage/**", "**/Carthage/**", "vendor/**", "**/vendor/**", "oh_modules/**", "**/oh_modules/**", ".build/**", "**/*.xcframework/**", "**/*.framework/**")
 # 完成维度互相独立；提交与推送不能由编译成功推导。
 TASK_PROTOCOL = "2"  # 协议版本要求安装器与所有持久任务入口一致；旧进程必须离线停写。
+PRESERVED_RULES_PROTOCOL = "1"  # explicit offline installer handoff; never reinterprets task state
 SUPPORTED_STATE_SCHEMAS = ("2.0", "2.1")  # 2.1 元数据确认链必须让不认识其语义的旧 writer/installer 失败关闭。
 TERMINAL = {"closed", "cancelled"}  # 释放未来写所有权；不推导任何验收维度通过。
 STATUSES = {"active", "waiting-permission", "blocked"} | TERMINAL
@@ -583,7 +584,11 @@ def rules_identity(root: Path) -> dict:
             raise ValueError(f"项目规则发生本地漂移: {item['path']}")
         if not source.is_file() or file_hash(source) != item["sourceSha256"]:
             raise ValueError(f"同版本框架内容发生漂移: {item['source']}")
-    return {"version": manifest["suiteVersion"], "managedSha256": digest(manifest["managedFiles"])}
+    identity = {"version": manifest["suiteVersion"], "managedSha256": digest(manifest["managedFiles"])}
+    receipt = preserved_rules_receipt(manifest)
+    if receipt is not None:
+        identity["preservedTaskRulesSha256"] = receipt["receiptSha256"]
+    return identity
 
 
 def confirmed_identity(root: Path, validated_rules: dict | None = None) -> dict:
@@ -741,6 +746,41 @@ def begin(root: Path, task_id: str, files: list[str], request: str, owner: str =
         return state
 
 
+def preserved_rules_receipt(manifest: dict) -> dict | None:
+    """Verify receipt shape and integrity; the local hash detects drift, not forged authorization."""
+    receipt = manifest.get("preservedTaskRules")
+    if receipt is None:
+        return None
+    if (not isinstance(receipt, dict) or set(receipt) != {"protocol", "planSha256", "tasks", "receiptSha256"} or
+            receipt["protocol"] != PRESERVED_RULES_PROTOCOL or
+            not isinstance(receipt["planSha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", receipt["planSha256"]) or
+            not isinstance(receipt["tasks"], dict) or
+            digest({key: receipt[key] for key in ("protocol", "planSha256", "tasks")}) != receipt["receiptSha256"]):
+        raise ValueError("任务规则交接记录格式或摘要变化")
+    return receipt
+
+
+def preserved_rules_for_task(manifest: dict, state: dict) -> dict:
+    """Only an installer-recorded transition for this task's original baseline and exact managed bytes."""
+    preservation = preserved_rules_receipt(manifest)
+    if preservation is None:
+        return {}
+    entry = preservation["tasks"].get(state["taskId"])
+    if entry is None:
+        return {}
+    if not isinstance(entry, dict) or entry.get("baselineSha256") != digest(state["baseline"]) or not isinstance(entry.get("paths"), dict):
+        raise ValueError("任务规则交接与不可变基线不符")
+    canonical = dict(RUNTIME_MANAGED_MAPPINGS[manifest["framework"]])
+    managed = {item["path"]: item["installedSha256"] for item in manifest["managedFiles"]
+               if canonical.get(item["path"]) == item["source"]}
+    for name, transition in entry["paths"].items():
+        if (not isinstance(transition, dict) or set(transition) != {"baselineSha256", "installedSha256"} or name not in managed or
+                transition.get("baselineSha256") != state["baseline"].get(name) or
+                transition.get("installedSha256") != managed[name]):
+            raise ValueError("任务规则交接包含不匹配的受管路径或摘要")
+    return entry["paths"]
+
+
 @task_scoped
 def check_scope(root: Path, state: dict) -> dict:
     """比较当前真实文件与基线；禁止依赖修改、越界和覆盖已有修改，返回差异或抛错。"""
@@ -749,6 +789,11 @@ def check_scope(root: Path, state: dict) -> dict:
     if state.get('readCoverage') != ReadBoundary(root).coverage():
         raise ValueError('项目或任务读取范围已变化，旧基线失效；禁止自动扩大范围恢复')
     current = tree_snapshot(root)
+    boundary = ReadBoundary(root)
+    carried = {}
+    manifest_name = ".ai-project/framework-installation.json"
+    if boundary.exists(manifest_name):
+        carried = preserved_rules_for_task(boundary.read_json(manifest_name), state)
     acknowledged = {**state.get('acknowledgedMetadata', {}), **state.get('acknowledgedContext', {})}
     changed = sorted(name for name in set(current) | set(state["baseline"]) | set(acknowledged) if current.get(name) != state["baseline"].get(name) or name in acknowledged and current.get(name) != acknowledged[name].get('newSha256'))
     # 其他任务的文件允许保持独立变化；本任务只声明自己的改动，保护范围全局检查。
@@ -773,7 +818,8 @@ def check_scope(root: Path, state: dict) -> dict:
         origin = entry.get('baselineSha256', entry.get('oldSha256'))
         original_matches = state['baseline'].get(name) == origin or name not in state['baseline'] and origin == 'absent'
         return original_matches and current.get(name) == entry.get('newSha256')
-    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and not acknowledged_change(name)]
+    unexpected = [name for name in changed if name not in state["allowedFiles"] and name not in other_files and not acknowledged_change(name)
+                  and (name not in carried or name in acknowledged or current.get(name) != carried[name]["installedSha256"])]
     if unexpected:
         raise ValueError(f"范围外或原有用户文件发生变化，暂停人工核对: {unexpected}")
     return {"changedFiles": [name for name in changed if name in state["allowedFiles"]], "current": current, "coverage": ReadBoundary(root).coverage()}

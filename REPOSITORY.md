@@ -1,3 +1,7 @@
+# 2.6.13 preserve task state (candidate)
+
+显式离线保留任务升级仅更新可校验的协议 2 受管规则和安装元数据。任务状态、所有权、原始基线、检查点和历史验证报告不重写；原规则的验证报告不算新规则验收通过。普通升级不放开未终结任务。见 [离线保留任务升级](docs/离线保留任务升级.md)。此提交不部署或升级任何现有业务项目。
+
 # 2.6.12 verification preflight
 
 Version `2.6.12-verification-preflight-rc3` adds deterministic report/evidence path checks before verification registration. A new framework-observed pre-Gate path error may settle only its own new execution with history; post-yield or unknown executions remain pending. It is not a legacy release facility and does not upgrade any installed project or pinned task. Full process-tree exit is not inferred from a PID or lock. Preflight rejects case-equivalent control names, aliases and non-directory ancestors, but does not eliminate races after checking. Before atomic state replacement an audit failure leaves the prior state; after replacement, a persistence failure is an uncertain commit requiring locked inspection of state and history.
