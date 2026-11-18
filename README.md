@@ -27,7 +27,7 @@
 - `swiftui-visual-design-review`：SwiftUI 视觉方向、品牌一致性、动效和渲染验收；只在相关 iOS 项目的 `.agents/skills/` 中按需接入。
 - `unslop-ui`：按项目与具体文件选择的新 UI/明确 UI 优化能力，默认关闭，已有设计优先。独立接入方式见 [可选 Unslop UI](docs/可选Unslop-UI.md)；原安装入口不会安装它。
 
-- `harmonyos-app-reimplementation`：显式选择的鸿蒙马甲包制作。保留原功能、业务逻辑及底层实现，新建自有类、使用新类名与方法名，按参考重做全部自有页面 UI 和图标。安装、触发示例与验收边界见 [鸿蒙马甲包 Skill](docs/鸿蒙独立重实现Skill.md)。普通项目默认不启用。
+- `harmonyos-app-reimplementation`：显式选择的鸿蒙马甲包制作。保留原功能、业务逻辑及底层实现，新建自有类、使用新类名与方法名，按参考重做全部自有页面 UI 和图标。新项目从[独立 Skill 安装](docs/鸿蒙马甲包独立安装.md)开始，不预装日常框架；已有未使用的日常安装按[显式交接](docs/鸿蒙马甲包显式交接.md)处理。普通项目默认不启用。
 
 ## 生命周期
 
