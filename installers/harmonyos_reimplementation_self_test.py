@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""隔离合成项目：只验证可选安装，不冒充业务重实现验收。"""
+"""隔离合成项目：只校验可选安装，不代替业务等价验收。"""
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,9 @@ class ReimplementationTests(unittest.TestCase):
         return {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file()}
     def test_preview_has_no_side_effects(self):
         before=(self.inventory(self.source),self.inventory(self.target))
-        self.assertEqual(enable(self.target,self.source)['status'],'dry-run')
+        preview=enable(self.target,self.source)
+        self.assertEqual(preview['status'],'dry-run')
+        self.assertEqual(preview['selection']['intent'],'implementation-preserving-restyle')
         self.assertEqual(before,(self.inventory(self.source),self.inventory(self.target)))
     def test_install_only_target_and_exact_payload(self):
         source=self.inventory(self.source);target=self.inventory(self.target)
@@ -34,6 +36,7 @@ class ReimplementationTests(unittest.TestCase):
             if p.is_file():self.assertEqual(p.read_bytes(),(self.target/TARGET/p.relative_to(CAPABILITY)).read_bytes())
         selection=json.loads((self.target/TARGET/'selection.json').read_text())
         self.assertEqual(selection['projectRoot'],str(self.target));self.assertEqual(selection['sourceRoot'],str(self.source))
+        self.assertEqual(selection['intent'],'implementation-preserving-restyle')
         self.assertTrue(selection['sourceReadOnly']);self.assertFalse((self.target/'AGENTS.md').exists())
     def test_existing_edits_not_overwritten(self):
         enable(self.target,self.source,True)
