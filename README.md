@@ -1,4 +1,6 @@
-> Current source version: `2.6.16-standalone-restyle-rc1`. 独立安装入口现在可先列出精确授权范围；显式安装会自动创建获准、尚不存在的 Skill 父目录。 新鸿蒙马甲包目标可从[独立 Skill 入口](docs/鸿蒙马甲包独立安装.md)预检并显式安装；制作验收前不安装日常框架，验收后另行明确接入。已有日常框架目标仍阻断，不能自动转换。此版本不升级任何现有项目。
+> Current source version: `2.6.17-restyle-transition-rc1`. 新增[未开任务日常安装的显式独立 Skill 交接](docs/鸿蒙马甲包显式交接.md)：精确范围审阅、原策略归档、固定暂存、计划核验、显式应用与保留隔离回滚。必须另有真实授权和停写证据，不转换有任务或人工修改控制文件的项目，不修改应用或自动部署。新目标继续使用[独立安装入口](docs/鸿蒙马甲包独立安装.md)，原流程不变。
+
+> Previous source version: `2.6.16-standalone-restyle-rc1`. 精确父目录授权预检与缺失目录创建。
 
 > Historical source version: `2.6.12-verification-preflight-rc3`. Verification paths are checked before execution registration; only framework-observed pre-Gate path failures may settle their own new execution. Existing pending executions are not released or migrated. Previous version notices below are historical.
 
