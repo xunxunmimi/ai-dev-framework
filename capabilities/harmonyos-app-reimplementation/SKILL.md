@@ -1,25 +1,25 @@
 ---
 name: harmonyos-app-reimplementation
-description: Independently reimplement an owned HarmonyOS app with identical business behavior and visible copy but a new logo/reference-led UI. Use only for an explicitly selected reimplementation (马甲包) project, not ordinary bug fixes, branding-only changes, or iOS parity migration.
+description: Restyle an authorized HarmonyOS app (马甲包) with a reference-led redesign of every owned page and icon and newly named classes and methods. Preserve the source functionality, business logic, underlying implementation, and user-facing copy. Use only when explicitly selected for that purpose, not for ordinary fixes or iOS parity migration.
 ---
 
-# 鸿蒙应用独立重实现
+# 鸿蒙马甲包：保留原实现，重做视觉
 
-目标：业务行为、功能和用户可见文案不变；自有 UI、布局、图标与实现重新设计。不是复制工程后批量改名，不是审核规避工具，不承诺重复应用审查或商店上架结果。
+所有显式选择本能力的鸿蒙马甲项目使用同一规则：新建自有类、使用新类名和新方法名，保留原功能、业务逻辑、算法和底层实现；按 Logo 和 UI 参考重做全部自有页面与图标，保留用户可见文案。不以换名或重做 UI 为由重写业务、替换引擎或改变导出内容；不用于规避审核，不承诺上架。
 
 ## 启用与范围
 
-本能力是可选能力，不是第四个主框架。目标项目先接入 HarmonyOS 日常主框架；仅当用户明确要求本次独立重实现，且本项目 `.agents/skills/harmonyos-app-reimplementation/selection.json` 的 `enabled` 为 true、`projectRoot` 与当前规范路径一致时使用。从 selection 读取 sourceRoot 后，重新验证源/目标读取策略；选择记录不授予业务读取、编辑、上传或收费服务权限。仅有源码目录或复制来的其他项目选择记录不算启用。用户暂停/撤销后停止，普通 Bug 不扩展为全量重写。
+本能力是可选能力，不是第四个主框架。目标项目先接入 HarmonyOS 日常主框架；仅当用户明确要求本次鸿蒙马甲制作，且本项目 `.agents/skills/harmonyos-app-reimplementation/selection.json` 的 `enabled` 为 true、`projectRoot` 与当前规范路径一致时使用。从 selection 读取 sourceRoot 后，重新验证源/目标读取策略；选择记录不授予业务读取、编辑、上传或收费服务权限。仅有源码目录或复制来的其他项目选择记录不算启用。用户暂停/撤销后停止，普通 Bug 不扩展为马甲制作。保留原能力 ID 和安装路径；旧 selection 的 intent 只记历史，不授权重写原实现。现有项目不自动替换、升级或改写任务记录。
 
 首次安装见框架 `docs/鸿蒙独立重实现Skill.md`。源码/目标须分开且互不包含，源只读。已有目标修改先保留并核对；不覆盖并发工作，不复制源 `.git`、凭据或整个控制目录。先记录源 commit/dirty 状态与目标基线，不擅自提交用户修改。
 
-输入：源项目、目标项目、授权范围、Logo、几张 UI 参考图、平台/API/设备约束、允许保留的依赖与新项目配置。配置缺失可以留显式占位，禁止借用原应用生产身份冒充联调通过。缺少图片先做行为盘点，不能声称已完成视觉设计。只有实际阻塞的一项需要问用户，其他独立工作继续。
+输入：源项目、目标项目、授权范围、Logo、几张 UI 参考图、平台/API/设备约束、原实现依赖、受保护的输出布局、明确批准的差异与新项目配置。配置缺失可以留显式占位，禁止借用原应用生产身份冒充联调通过。缺少图片先做行为盘点，不能声称已完成视觉设计。只有实际阻塞的一项需要问用户，其他独立工作继续。
 
 ## 执行顺序与交付
 
 1. **先提取合同再编码。** 阅读 [行为与重实现](references/behavior-contract.md)，建立可追溯功能/页面/状态、文案、多语言、数据与外部合同清单。以源码、产品需求和实际运行交叉核对；未知项标记 unknown，不猜实现。
 2. **从参考图生成新视觉系统。** 阅读 [视觉设计](references/visual-direction.md)，查看真实图片像素，提取元素而不是复制整张参考。形成 token、组件与代表页，再覆盖全部自有页面、弹窗和状态。文案不改；系统/SDK UI 单独列例外。
-3. **独立设计并分片重实现。** 基于行为合同重新设计模块边界、状态流和内部接口；以有意义的英文标识命名代码与资源、以准确的新注释解释新实现。不能把随机改名、调换函数顺序、复制旧注释或语法替换当成重写。所有自有模块需有新实现映射；临时调用旧自有实现明确记为未完成。按主框架继续有效任务，不为每片重复创建新任务。
+3. **保留实现，分片换名与接线。** 对本项目实有功能建立源实现、目标新类与新方法、依赖、界面及验收映射。包括水印、合成、导出等自有模块；将原逻辑按原算法、处理顺序和依赖迁入新类与新方法，不重新设计业务状态机或底层链路。命名有意义并核对引用，平台强制和兼容标识按边界文件列例外。按现有框架接续，不越读写范围或重复开任务。
 4. **逐片验证并恢复推进。** 阅读 [验证与交付](references/verification.md)。行为等价与视觉新设计是两条独立验收线；验证实际文件/返回值/状态，不只看 Toast。完成一片记录结果并继续下一未完成项；受阻只暂停受影响项。恢复时读当前合同、代码变更和未完成清单，不把历史“已完成”当最新事实。
 5. **报告事实。** 已实现、已静态检查、已构建、已真机验证、未测、配置阻塞分别列出；没有真实证据不宣称全量完成。上传、合并、发布按当前明确授权执行；本能力的安装不自动授权这些操作。
 

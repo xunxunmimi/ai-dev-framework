@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview or explicitly copy optional HarmonyOS reimplementation capability into one selected Codex project."""
+"""Preview or explicitly install the HarmonyOS restyling skill in one selected Codex project."""
 from __future__ import annotations
 import argparse,hashlib,json,os,shutil,sys,tempfile,stat
 from pathlib import Path
@@ -23,7 +23,7 @@ def enable(project: Path, source: Path, apply: bool=False) -> dict:
     boundary=ReadBoundary(root)
     source_boundary=ReadBoundary(original)
     selection={'schemaVersion':'1.0','enabled':True,'projectRoot':str(root),'sourceRoot':str(original),
-               'intent':'independent-reimplementation','sourceReadOnly':True,
+               'intent':'implementation-preserving-restyle','sourceReadOnly':True,
                'sourcePolicySha256':source_boundary.sha256,'targetPolicySha256':boundary.sha256}
     boundary.require(TARGET)
     if boundary.exists(TARGET):raise ValueError('project skill already exists; inspect it rather than overwrite')
