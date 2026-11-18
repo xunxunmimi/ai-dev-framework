@@ -1,4 +1,4 @@
-> Current source version: `2.6.15-standalone-restyle-rc1`. 新鸿蒙马甲包目标可从[独立 Skill 入口](docs/鸿蒙马甲包独立安装.md)预检并显式安装；制作验收前不安装日常框架，验收后另行明确接入。已有日常框架目标仍阻断，不能自动转换。此版本不升级任何现有项目。
+> Current source version: `2.6.16-standalone-restyle-rc1`. 独立安装入口现在可先列出精确授权范围；显式安装会自动创建获准、尚不存在的 Skill 父目录。 新鸿蒙马甲包目标可从[独立 Skill 入口](docs/鸿蒙马甲包独立安装.md)预检并显式安装；制作验收前不安装日常框架，验收后另行明确接入。已有日常框架目标仍阻断，不能自动转换。此版本不升级任何现有项目。
 
 > Historical source version: `2.6.12-verification-preflight-rc3`. Verification paths are checked before execution registration; only framework-observed pre-Gate path failures may settle their own new execution. Existing pending executions are not released or migrated. Previous version notices below are historical.
 

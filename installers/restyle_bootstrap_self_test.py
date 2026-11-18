@@ -37,4 +37,28 @@ class BootstrapTests(ReimplementationTests):
         p=entry.bootstrap(self.target,self.source)
         with self.assertRaises(ValueError):entry.bootstrap(self.target,self.source,True,p['plan']['planSha256'])
         self.assertFalse((self.target/TARGET).exists())
+    def partial(self,deny=None,omit=None):
+        p=self.target/'.ai-project/read-policy.json';d=json.loads(p.read_text())
+        allow=entry.required_read_scope()['targetReadAllowCandidates']
+        if omit:allow=[n for n in allow if n!=omit]
+        d.update(mode='partial',allow=allow,deny=deny or []);p.write_text(json.dumps(d))
+    def test_absent_parents_created_under_exact_partial_grant(self):
+        self.partial();self.assertFalse((self.target/'.agents').exists())
+        p=entry.bootstrap(self.target,self.source);self.assertFalse((self.target/'.agents').exists())
+        result=entry.bootstrap(self.target,self.source,True,p['plan']['planSha256'],'synthetic stop')
+        self.assertEqual(result['status'],'enabled');self.assertTrue((self.target/TARGET/'SKILL.md').is_file())
+    def test_missing_parent_grant_actionable_without_creation(self):
+        self.partial(omit='.agents')
+        with self.assertRaisesRegex(ValueError,'安装前置路径未授权.*.agents'):entry.bootstrap(self.target,self.source)
+        self.assertFalse((self.target/'.agents').exists())
+    def test_explicit_parent_deny_not_overridden(self):
+        self.partial(deny=['.agents']);before=self.inventory(self.target)
+        with self.assertRaisesRegex(ValueError,'安装前置路径未授权'):entry.bootstrap(self.target,self.source)
+        self.assertEqual(before,self.inventory(self.target))
+    def test_scope_proposal_has_no_broad_agents_or_target_access(self):
+        with mock.patch.object(entry,'ReadBoundary',side_effect=AssertionError('no target access')):
+            result=entry.required_read_scope()
+        self.assertFalse(result['authorizationGranted']);self.assertEqual(result['writes'],[])
+        self.assertFalse(any('*' in n for n in result['targetReadAllowCandidates']))
+        self.assertIn('.agents',result['targetReadAllowCandidates']);self.assertIn('.agents/skills',result['targetReadAllowCandidates'])
 if __name__=='__main__':unittest.main(verbosity=2)
