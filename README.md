@@ -1,10 +1,12 @@
-> Current source version: `2.6.12-verification-preflight-rc3`. Verification paths are checked before execution registration; only framework-observed pre-Gate path failures may settle their own new execution. Existing pending executions are not released or migrated. Previous version notices below are historical.
+> Current source version: `2.6.15-standalone-restyle-rc1`. 新鸿蒙马甲包目标可从[独立 Skill 入口](docs/鸿蒙马甲包独立安装.md)预检并显式安装；制作验收前不安装日常框架，验收后另行明确接入。已有日常框架目标仍阻断，不能自动转换。此版本不升级任何现有项目。
+
+> Historical source version: `2.6.12-verification-preflight-rc3`. Verification paths are checked before execution registration; only framework-observed pre-Gate path failures may settle their own new execution. Existing pending executions are not released or migrated. Previous version notices below are historical.
 
 > Previous source version: `2.6.11-harmony-reimplementation`. Optional Skill and upgrade boundaries: [鸿蒙独立重实现 Skill](docs/鸿蒙独立重实现Skill.md).
 
-> Current source version: `2.6.10-migration-bootstrap`. See [migration authorization bootstrap](docs/迁移初始化与读取授权.md). Previous version notices below are historical.
+> Historical source version: `2.6.10-migration-bootstrap`. See [migration authorization bootstrap](docs/迁移初始化与读取授权.md). Previous version notices below are historical.
 
-> Current source version: `2.6.8-harmony-workspace-ignore`. See [workspace policy and upgrade compatibility](docs/鸿蒙迁移工作区Git规则.md). The version notices below are historical.
+> Historical source version: `2.6.8-harmony-workspace-ignore`. See [workspace policy and upgrade compatibility](docs/鸿蒙迁移工作区Git规则.md). The version notices below are historical.
 
 > 本分支为 `2.6.7-task-handoff-review` 审阅候选，尚非正式 release。本轮支持精确 UI 状态确认、代码交付释放与显式新任务接续，兼容/回退和离线应用限制见 [交付说明](docs/2.6.7-代码交付与精确元数据确认.md)。上传分支不会自动更新任何项目，实际安装须核确切提交和项目回执。下面保留原套件说明。
 

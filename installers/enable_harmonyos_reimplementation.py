@@ -9,9 +9,12 @@ sys.path.insert(0,str(SUITE/'shared/task-routing'))
 sys.path.insert(0,str(CAPABILITY/'scripts'))
 from read_boundary import ReadBoundary
 from task_runtime import project_lock
+from read_boundary import secure_fd
 TARGET='.agents/skills/harmonyos-app-reimplementation'
+INSTALL_PARENTS=('.agents','.agents/skills')
+INSTALL_LOCK='.ai-project/reimplementation-install.lock'
 
-def enable(project: Path, source: Path, apply: bool=False) -> dict:
+def enable(project: Path, source: Path, apply: bool=False, *, before_publish=None, standalone: bool=False) -> dict:
     """源只读、目录互不包含；只新增显式选择的目标技能，不修改既有主框架。"""
     root=project.absolute()
     original=source.absolute()
@@ -25,6 +28,9 @@ def enable(project: Path, source: Path, apply: bool=False) -> dict:
     selection={'schemaVersion':'1.0','enabled':True,'projectRoot':str(root),'sourceRoot':str(original),
                'intent':'implementation-preserving-restyle','sourceReadOnly':True,
                'sourcePolicySha256':source_boundary.sha256,'targetPolicySha256':boundary.sha256}
+    if standalone:
+        selection['workflowPhase']='rebrand-production-before-acceptance'
+        selection['dailyHandoff']='explicit-after-acceptance'
     boundary.require(TARGET)
     if boundary.exists(TARGET):raise ValueError('project skill already exists; inspect it rather than overwrite')
     source={}
@@ -35,16 +41,22 @@ def enable(project: Path, source: Path, apply: bool=False) -> dict:
             name=p.relative_to(CAPABILITY).as_posix();boundary.require(TARGET+'/'+name)
             source[name]=hashlib.sha256(p.read_bytes()).hexdigest()
     boundary.require(TARGET+'/selection.json')
+    # A successful preview must check every authorization needed by apply, without creating anything.
+    for name in (*INSTALL_PARENTS, INSTALL_LOCK):
+        boundary.require(name)
     out={'status':'dry-run','project':str(root),'destination':str(root/TARGET),'selection':selection,'files':sorted(source),'writes':[]}
     if not apply:return out
-    boundary.require('.ai-project/reimplementation-install.lock')
-    with project_lock(root,'.ai-project/reimplementation-install.lock'):
+    with project_lock(root,INSTALL_LOCK):
+        if before_publish is not None: before_publish()
         if boundary.exists(TARGET):raise ValueError('project skill appeared; refuse overwrite')
-        for name in ['.agents','.agents/skills']:
+        for name in INSTALL_PARENTS:
             boundary.require(name)
-            if boundary.exists(name):
-                if not (root/name).is_dir():raise ValueError('skill parent is not a directory')
-            else:(root/name).mkdir()
+            try:
+                descriptor=secure_fd(root,name,directory=True)
+            except FileNotFoundError:
+                (root/name).mkdir()
+            else:
+                os.close(descriptor)
         with tempfile.TemporaryDirectory(prefix='.reimplementation-',dir=root/'.agents/skills') as folder:
             stage=Path(folder)/'payload';shutil.copytree(CAPABILITY,stage,ignore=shutil.ignore_patterns('__pycache__','.DS_Store'))
             staged={}
@@ -58,6 +70,7 @@ def enable(project: Path, source: Path, apply: bool=False) -> dict:
             for name,digest in source.items():
                 if hashlib.sha256((stage/name).read_bytes()).hexdigest()!=digest:raise ValueError('source changed during copy')
             (stage/'selection.json').write_text(json.dumps(selection,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+            if before_publish is not None: before_publish()
             os.rename(stage,root/TARGET)
     out.update(status='enabled',writes=[TARGET+'/'+name for name in sorted(source)]+[TARGET+'/selection.json'])
     return out
