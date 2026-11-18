@@ -4,9 +4,27 @@ import argparse
 import json
 from pathlib import Path
 from plan_harmonyos_restyle import plan
-from enable_harmonyos_reimplementation import enable
+from enable_harmonyos_reimplementation import enable, CAPABILITY, TARGET, INSTALL_PARENTS, INSTALL_LOCK
 from project_framework import installation_locks, LOCK_PATHS
 from read_boundary import ReadBoundary
+
+def required_read_scope():
+    """仅检查当前可信发行包，不读取目标；这是待所有者审阅的范围，不是授权。"""
+    names={'.ai-project','.agents','.agents/skills',TARGET,INSTALL_LOCK,*LOCK_PATHS,
+      '.ai-project/framework-installation.json','.ai-project/lifecycle.json','.codex-rules',
+      '.migration-v2','AGENTS.md','.ai-project/identity.json','.ai-project/operation-holds.json',
+      '.ai-project/legacy-baseline.json','.ai-project/task-input.json','.ai-project/tasks',
+      '.ai-project/upgrades','.ai-project/operation-holds','.ai-project/checkpoints'}
+    for p in CAPABILITY.rglob('*'):
+        if p.is_symlink():raise ValueError('capability link')
+        if '__pycache__' in p.parts or p.name=='.DS_Store':continue
+        names.add(TARGET+'/'+p.relative_to(CAPABILITY).as_posix())
+    names.add(TARGET+'/selection.json')
+    return {'status':'scope-proposal-only','targetReadAllowCandidates':sorted(names),
+      'parentInspections':list(INSTALL_PARENTS),'installationLock':INSTALL_LOCK,
+      'sourceRequirement':'源项目须有独立已确认读取策略；此清单不授予源读取或任何写权限。',
+      'writes':[],'policyEdited':False,'authorizationGranted':False,
+      'nextStep':'首次确认读取策略时一并审阅这些精确路径。已有策略缺项或明确拒绝时，由策略所有者按正式流程处理；不得自动追加、覆盖拒绝或扩大为 .agents/**。范围就绪后运行正常预检，显式 apply 会创建缺失且已获准的父目录。'}
 
 def bootstrap(project, source, apply=False, expected_plan=None, offline_ack=''):
     initial=plan(project,source)
@@ -31,10 +49,15 @@ def bootstrap(project, source, apply=False, expected_plan=None, offline_ack=''):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--project',required=True,type=Path);p.add_argument('--source',required=True,type=Path)
+    p.add_argument('--project',type=Path);p.add_argument('--source',type=Path)
+    p.add_argument('--print-required-read-scope',action='store_true',help='只列首次策略确认的精确路径，不访问源/目标或创建目录')
     p.add_argument('--apply',action='store_true');p.add_argument('--plan-sha256');p.add_argument('--offline-writers-stopped',default='')
     a=p.parse_args()
-    try: print(json.dumps(bootstrap(a.project,a.source,a.apply,a.plan_sha256,a.offline_writers_stopped),ensure_ascii=False,indent=2))
+    if a.print_required_read_scope and (a.apply or a.plan_sha256 or a.offline_writers_stopped):
+        p.error('--print-required-read-scope cannot be combined with installation flags')
+    if not a.print_required_read_scope and (a.project is None or a.source is None):
+        p.error('--project and --source are required for installation or preflight')
+    try: print(json.dumps(required_read_scope() if a.print_required_read_scope else bootstrap(a.project,a.source,a.apply,a.plan_sha256,a.offline_writers_stopped),ensure_ascii=False,indent=2))
     except (ValueError,OSError,TypeError) as e:
         print(json.dumps({'status':'blocked','reason':str(e)},ensure_ascii=False));return 2
     return 0

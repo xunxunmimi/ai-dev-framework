@@ -14,6 +14,18 @@ TARGET='.agents/skills/harmonyos-app-reimplementation'
 INSTALL_PARENTS=('.agents','.agents/skills')
 INSTALL_LOCK='.ai-project/reimplementation-install.lock'
 
+def inspect_install_parents(root, boundary):
+    result={}
+    for name in (*INSTALL_PARENTS,INSTALL_LOCK):
+        try:boundary.require(name)
+        except ValueError as error:
+            raise ValueError('安装前置路径未授权或被明确拒绝: '+name+'。这不表示目录不存在；不要手工创建绕过。先运行 bootstrap_harmonyos_restyle.py --print-required-read-scope 交由策略所有者复核；本工具不会修改已有策略。') from error
+        if name==INSTALL_LOCK:continue
+        try:fd=secure_fd(root,name,directory=True)
+        except FileNotFoundError:result[name]='absent-will-create-on-explicit-apply'
+        else:os.close(fd);result[name]='present'
+    return result
+
 def enable(project: Path, source: Path, apply: bool=False, *, before_publish=None, standalone: bool=False) -> dict:
     """源只读、目录互不包含；只新增显式选择的目标技能，不修改既有主框架。"""
     root=project.absolute()
@@ -31,6 +43,7 @@ def enable(project: Path, source: Path, apply: bool=False, *, before_publish=Non
     if standalone:
         selection['workflowPhase']='rebrand-production-before-acceptance'
         selection['dailyHandoff']='explicit-after-acceptance'
+    inspect_install_parents(root,boundary)
     boundary.require(TARGET)
     if boundary.exists(TARGET):raise ValueError('project skill already exists; inspect it rather than overwrite')
     source={}
@@ -44,7 +57,7 @@ def enable(project: Path, source: Path, apply: bool=False, *, before_publish=Non
     # A successful preview must check every authorization needed by apply, without creating anything.
     for name in (*INSTALL_PARENTS, INSTALL_LOCK):
         boundary.require(name)
-    out={'status':'dry-run','project':str(root),'destination':str(root/TARGET),'selection':selection,'files':sorted(source),'writes':[]}
+    out={'status':'dry-run','project':str(root),'destination':str(root/TARGET),'selection':selection,'files':sorted(source),'parentDirectoriesEnsuredOnApply':list(INSTALL_PARENTS),'writes':[]}
     if not apply:return out
     with project_lock(root,INSTALL_LOCK):
         if before_publish is not None: before_publish()
