@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from enable_harmonyos_reimplementation import enable, TARGET, CAPABILITY
+from enable_harmonyos_reimplementation import enable, TARGET, CAPABILITY, INSTALL_LOCK, INSTALL_PARENTS
 from pin_release import pin, verify
 
 class ReimplementationTests(unittest.TestCase):
@@ -53,6 +53,27 @@ class ReimplementationTests(unittest.TestCase):
         p=self.target/'.ai-project/read-policy.json';data=json.loads(p.read_text());data.update(mode='partial',allow=['main.ets']);p.write_text(json.dumps(data));before=self.inventory(self.target)
         with self.assertRaises(ValueError):enable(self.target,self.source,True)
         self.assertEqual(before,self.inventory(self.target))
+    def test_partial_preview_rejects_missing_parent_or_lock_before_writes(self):
+        p=self.target/'.ai-project/read-policy.json'
+        data=json.loads(p.read_text())
+        required=[*INSTALL_PARENTS,INSTALL_LOCK]
+        for missing in required:
+            with self.subTest(missing=missing):
+                data.update(mode='partial',allow=[TARGET,TARGET+'/**',*[name for name in required if name!=missing]])
+                p.write_text(json.dumps(data))
+                before=self.inventory(self.target)
+                for apply in (False,True):
+                    with self.assertRaisesRegex(ValueError,missing.replace('.',r'\.')):
+                        enable(self.target,self.source,apply)
+                self.assertEqual(before,self.inventory(self.target))
+                self.assertFalse((self.target/'.agents').exists())
+                self.assertFalse((self.target/INSTALL_LOCK).exists())
+        data.update(mode='partial',allow=[TARGET,TARGET+'/**',*required])
+        p.write_text(json.dumps(data))
+        before=self.inventory(self.target)
+        self.assertEqual(enable(self.target,self.source)['status'],'dry-run')
+        self.assertEqual(before,self.inventory(self.target))
+
     def test_same_and_nested_roots_blocked(self):
         with self.assertRaises(ValueError):enable(self.source,self.source,True)
         nested=self.source/'nested';nested.mkdir()
